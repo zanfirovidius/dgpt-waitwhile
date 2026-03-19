@@ -9,9 +9,10 @@ interface UploaderProps {
   onUsersParsed: (users: ExtendedUser[]) => void;
   selectedLocation: string;
   emailDomain: string;
+  defaultRole: string;
 }
 
-export default function Uploader({ onUsersParsed, selectedLocation, emailDomain }: UploaderProps) {
+export default function Uploader({ onUsersParsed, selectedLocation, emailDomain, defaultRole }: UploaderProps) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,10 +57,10 @@ export default function Uploader({ onUsersParsed, selectedLocation, emailDomain 
           if (!row || row.length === 0) continue;
           
           if (row[nameIndex] && row[phoneIndex]) {
-            let role = 'SEF-CABINET';
+            let role = defaultRole;
             if (roleIndex !== -1 && row[roleIndex]) {
               const rawRole = row[roleIndex].toString().trim().toUpperCase();
-              role = (rawRole === 'SECRETARIAT' || rawRole === 'SEF-CABINET') ? rawRole : 'SEF-CABINET';
+              role = (rawRole === 'SECRETARIAT' || rawRole === 'SEF-CABINET') ? rawRole : defaultRole;
             }
 
             // Using phone + custom domain for email

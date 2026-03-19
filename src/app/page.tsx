@@ -30,6 +30,8 @@ export default function Home() {
   const [locations, setLocations] = useState<{id: string; name: string}[]>([]);
   const [users, setUsers] = useState<ExtendedUser[]>([]);
   const [generateRandomPasswords, setGenerateRandomPasswords] = useState(false);
+  const [defaultPassword, setDefaultPassword] = useState<string>('');
+  const [defaultRole, setDefaultRole] = useState<string>('SECRETARIAT');
   const [emailDomain, setEmailDomain] = useState('dgpt.ro');
   const [isProcessing, setIsProcessing] = useState(false);
   const [syncDone, setSyncDone] = useState(false);
@@ -45,14 +47,19 @@ export default function Home() {
 
     // Deep copy to allow updates
     const updatedUsers: ExtendedUser[] = [...users];
+    const defaultPasswordTrimmed = defaultPassword.trim();
 
     for (let i = 0; i < updatedUsers.length; i++) {
       const user = updatedUsers[i];
       
       // Determine final password
-      const finalPassword = generateRandomPasswords || !user.password?.trim() 
-        ? generateRandomPassword() 
-        : user.password;
+      const finalPassword = generateRandomPasswords
+        ? generateRandomPassword()
+        : user.password?.trim()
+          ? user.password.trim()
+          : defaultPasswordTrimmed
+            ? defaultPasswordTrimmed
+            : generateRandomPassword();
         
       user.password = finalPassword;
 
@@ -150,7 +157,9 @@ export default function Home() {
               />
               <span className="label-text flex flex-col">
                 <span className="font-semibold">Auto-generate Passwords</span>
-                <span className="text-xs text-base-content/60">Generate secure 12-char passwords for new users</span>
+                    <span className="text-xs text-base-content/60">
+                      If enabled, ignore defaults and generate random passwords for everyone
+                    </span>
               </span>
             </label>
           </div>
@@ -165,6 +174,35 @@ export default function Home() {
               <h2 className="card-title text-lg flex items-center gap-2">
                 <Users size={20} className="text-primary" /> Add Users
               </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-semibold">Default Role (Bulk)</span>
+                  </label>
+                  <select
+                    className="select select-bordered w-full bg-base-200 focus:bg-base-100"
+                    value={defaultRole}
+                    onChange={(e) => setDefaultRole(e.target.value)}
+                  >
+                    <option value="SECRETARIAT">Secretariat</option>
+                    <option value="SEF-CABINET">Sef Cabinet</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text font-semibold">Default Password (Bulk)</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered w-full bg-base-200 focus:bg-base-100 font-mono"
+                    placeholder="Leave blank to auto-generate"
+                    value={defaultPassword}
+                    onChange={(e) => setDefaultPassword(e.target.value)}
+                  />
+                </div>
+              </div>
               
               <div role="tablist" className="tabs tabs-boxed mt-4 bg-base-200/50 p-1">
                 <input type="radio" name="input_tabs" role="tab" className="tab font-semibold" aria-label="Excel Upload" defaultChecked />
@@ -173,6 +211,7 @@ export default function Home() {
                     onUsersParsed={(newUsers: ExtendedUser[]) => setUsers([...users, ...newUsers])} 
                     selectedLocation={selectedLocation}
                     emailDomain={emailDomain}
+                    defaultRole={defaultRole}
                   />
                 </div>
 
@@ -182,6 +221,7 @@ export default function Home() {
                     onAddUser={(user: ExtendedUser) => setUsers([...users, user])} 
                     selectedLocation={selectedLocation}
                     emailDomain={emailDomain}
+                    defaultRole={defaultRole}
                   />
                 </div>
 
@@ -191,6 +231,7 @@ export default function Home() {
                     onUsersParsed={(newUsers: ExtendedUser[]) => setUsers([...users, ...newUsers])} 
                     selectedLocation={selectedLocation}
                     emailDomain={emailDomain}
+                    defaultRole={defaultRole}
                   />
                 </div>
               </div>

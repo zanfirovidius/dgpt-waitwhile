@@ -8,9 +8,10 @@ interface PasteTableProps {
   onUsersParsed: (users: ExtendedUser[]) => void;
   selectedLocation: string;
   emailDomain: string;
+  defaultRole: string;
 }
 
-export default function PasteTable({ onUsersParsed, selectedLocation, emailDomain }: PasteTableProps) {
+export default function PasteTable({ onUsersParsed, selectedLocation, emailDomain, defaultRole }: PasteTableProps) {
   const [rawData, setRawData] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +39,7 @@ export default function PasteTable({ onUsersParsed, selectedLocation, emailDomai
         if (cols.length >= 2) {
           const name = cols[0];
           const phone = cols[1];
-          let role = 'SEF-CABINET'; // Default fallback
+          let role = defaultRole; // Default fallback
           
           if (cols.length >= 3 && cols[2]) {
             const rawRole = cols[2].toUpperCase();

@@ -11,6 +11,8 @@ WORKDIR /app
 
 # Set production environment
 ENV NODE_ENV="production"
+ENV HOSTNAME="0.0.0.0"
+ENV PORT="3000"
 
 
 # Throw-away build stage to reduce size of final image
@@ -28,7 +30,7 @@ RUN npm ci --include=dev
 COPY . .
 
 # Build application
-RUN npx next build --experimental-build-mode compile
+RUN npx next build
 
 # Remove development dependencies
 RUN npm prune --omit=dev

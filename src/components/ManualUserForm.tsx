@@ -2,19 +2,24 @@
 
 import { ExtendedUser } from '@/app/page';
 import { UserPlus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ManualUserFormProps {
   onAddUser: (user: ExtendedUser) => void;
   selectedLocation: string;
   emailDomain: string;
+  defaultRole: string;
 }
 
-export default function ManualUserForm({ onAddUser, selectedLocation, emailDomain }: ManualUserFormProps) {
+export default function ManualUserForm({ onAddUser, selectedLocation, emailDomain, defaultRole }: ManualUserFormProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('SECRETARIAT');
+  const [role, setRole] = useState(defaultRole);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRole(defaultRole);
+  }, [defaultRole]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,7 +50,7 @@ export default function ManualUserForm({ onAddUser, selectedLocation, emailDomai
     // Reset form
     setName('');
     setPhone('');
-    setRole('SECRETARIAT');
+    setRole(defaultRole);
   };
 
   return (
