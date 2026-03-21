@@ -452,3 +452,178 @@ export async function getOccupancy(locationId: string, fromDateStr: string, toDa
     return { success: false, error: error.response?.data?.message || errData?.message || 'Failed to calculate occupancy. See server logs.' };
   }
 }
+
+// -------------------------------------------------------------------------------- //
+// Resource Categories
+// -------------------------------------------------------------------------------- //
+
+export interface ResourceCategory {
+  id: string;
+  name: string;
+  isCategory: boolean;
+  locationId?: string;
+  children?: ResourceItem[];
+}
+
+export interface ResourceItem {
+  id: string;
+  name: string;
+  isCategory: boolean;
+  locationId?: string;
+  categoryId?: string;
+}
+
+/**
+ * Fetches resource categories (tree structure) for a specific location.
+ * Uses GET /resources/tree?locationId=...
+ */
+export async function getResourceCategories(locationId: string): Promise<{ success: boolean; data?: ResourceCategory[]; error?: string }> {
+  try {
+    const API_KEY = process.env.WAITWHILE_API_KEY;
+    if (!API_KEY) return { success: false, error: 'API Key missing' };
+
+    const response = await waitwhileFetch(`/resources/tree?locationId=${locationId}`);
+    const data = response.data;
+
+    const results: any[] = Array.isArray(data) ? data : (data?.results || data?.data || []);
+
+    // Filter only categories (top-level category items)
+    const categories: ResourceCategory[] = results
+      .filter((r: any) => r.isCategory === true)
+      .map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        isCategory: true,
+        locationId: r.locationId,
+        children: Array.isArray(r.children)
+          ? r.children.map((child: any) => ({
+              id: child.id,
+              name: child.name,
+              isCategory: child.isCategory || false,
+              locationId: child.locationId,
+              categoryId: child.categoryId,
+            }))
+          : [],
+      }));
+
+    return { success: true, data: categories };
+  } catch (error: any) {
+    console.error('[Waitwhile] Error fetching resource categories:', error.message);
+    return { success: false, error: 'Failed to fetch resource categories' };
+  }
+}
+
+/**
+ * Creates a new resource category in Waitwhile.
+ * POST /resources with isCategory: true and specific settings.
+ */
+export async function createResourceCategory(
+  locationId: string,
+  name: string
+): Promise<{ success: boolean; data?: ResourceCategory; error?: string }> {
+  try {
+    const API_KEY = process.env.WAITWHILE_API_KEY;
+    if (!API_KEY) return { success: false, error: 'API Key missing' };
+
+    const payload = {
+      name,
+      locationIds: [locationId],
+      isCategory: true,
+      isRequired: true,
+      firstAvailableDisplay: 'hidden',
+    };
+
+    const response = await waitwhileFetch('/resources', 'POST', payload);
+    const created = response.data;
+
+    return {
+      success: true,
+      data: {
+        id: created.id,
+        name: created.name,
+        isCategory: true,
+        locationId: created.locationId,
+        children: [],
+      },
+    };
+  } catch (error: any) {
+    const errData = error.response?.data || error.data;
+    console.error('[Waitwhile] Error creating resource category:', errData || error.message);
+    return { success: false, error: errData?.message || error.message || 'Failed to create resource category' };
+  }
+}
+
+/**
+ * Fetches all resources for a location (flat list).
+ * GET /resources?locationId=...&limit=100
+ */
+export async function getResourcesByLocation(locationId: string): Promise<{ success: boolean; data?: ResourceItem[]; error?: string }> {
+  try {
+    const API_KEY = process.env.WAITWHILE_API_KEY;
+    if (!API_KEY) return { success: false, error: 'API Key missing' };
+
+    const response = await waitwhileFetch(`/resources?locationId=${locationId}&limit=100`);
+    const data = response.data;
+
+    const results: any[] = Array.isArray(data) ? data : (data?.results || data?.data || []);
+
+    const resources: ResourceItem[] = results.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      isCategory: r.isCategory || false,
+      locationId: r.locationId,
+      categoryId: r.categoryId,
+    }));
+
+    return { success: true, data: resources };
+  } catch (error: any) {
+    console.error('[Waitwhile] Error fetching resources:', error.message);
+    return { success: false, error: 'Failed to fetch resources' };
+  }
+}
+
+/**
+ * Creates a new resource (non-category) in Waitwhile.
+ * POST /resources
+ */
+export interface CreateResourcePayload {
+  name: string;
+  description?: string;
+  color?: string;
+  categoryId: string;
+  locationId: string;
+  hoursByDate?: Record<string, {
+    isOpen: boolean;
+    periods: { from: string; to: string }[];
+  }>;
+  spots?: number;
+}
+
+export async function createResource(
+  payload: CreateResourcePayload
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const API_KEY = process.env.WAITWHILE_API_KEY;
+    if (!API_KEY) return { success: false, error: 'API Key missing' };
+
+    const body: any = {
+      name: payload.name,
+      locationIds: [payload.locationId],
+      parentId: payload.categoryId,
+      isCategory: false,
+    };
+
+    if (payload.description) body.description = payload.description;
+    if (payload.color) body.color = payload.color;
+    if (payload.hoursByDate) body.hoursByDate = payload.hoursByDate;
+
+    const response = await waitwhileFetch('/resources', 'POST', body);
+
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    const errData = error.response?.data || error.data;
+    console.error('[Waitwhile] Error creating resource:', errData || error.message);
+    return { success: false, error: errData?.message || error.message || 'Failed to create resource' };
+  }
+}
+

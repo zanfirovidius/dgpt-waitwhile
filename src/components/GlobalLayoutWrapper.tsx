@@ -43,6 +43,7 @@ export function GlobalLayoutWrapper({
             <nav className="flex items-center gap-2 bg-base-200/50 p-1 rounded-lg border border-base-content/5 overflow-x-auto whitespace-nowrap hide-scrollbar">
               <a href="/" className="btn btn-sm btn-ghost hover:bg-base-100">Add Users</a>
               <a href="/occupancy" className="btn btn-sm btn-ghost hover:bg-base-100 text-warning">Occupancy</a>
+              <a href="/resources" className="btn btn-sm btn-ghost hover:bg-base-100 text-accent">Resources</a>
               <a href="/sandbox" className="btn btn-sm btn-ghost hover:bg-base-100 text-info">Sandbox</a>
               <a href="/delete" className="btn btn-sm btn-ghost hover:bg-base-100 text-error hover:text-error">Remove Users</a>
             </nav>

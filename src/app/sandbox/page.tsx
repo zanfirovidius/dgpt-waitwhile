@@ -64,9 +64,9 @@ export default function SandboxPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
       <div className="card bg-base-100 shadow-xl border border-base-200">
-        <div className="card-body">
+        <div className="card-body gap-6 sm:flex-row items-end">
+          <div className="flex-1 w-full sm:w-1/3">
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ShieldIcon className="text-info" /> Sandbox Generators
           </h1>
