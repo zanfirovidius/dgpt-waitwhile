@@ -1,8 +1,8 @@
 'use client';
 
-import { getOccupancy, OccupancyData } from '@/app/actions/waitwhile';
+import { getOccupancy, OccupancyData, getLocationDetails } from '@/app/actions/waitwhile';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, CalendarDays, ChevronDown, ChevronUp, Hash } from 'lucide-react';
+import { Activity, CalendarDays, ChevronDown, ChevronUp, Hash, Layers, Stethoscope } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -74,6 +74,7 @@ function PublicDashboard() {
   const fromDate = searchParams.get('from') || '';
   const toDate = searchParams.get('to') || '';
 
+  const [hideFullResources, setHideFullResources] = useState(() => searchParams.get('hideFull') === 'true');
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'occupancyPercent', direction: 'desc' });
 
   const { data: occupancy, isLoading, isError, error } = useQuery({
@@ -86,6 +87,17 @@ function PublicDashboard() {
     },
     enabled: !!selectedLocation && !!fromDate && !!toDate,
     refetchInterval: 30000, // Live auto-refresh every 30 seconds
+  });
+
+  const { data: locationDetails } = useQuery({
+    queryKey: ['waitwhile-location', selectedLocation],
+    queryFn: async () => {
+      if (!selectedLocation) return null;
+      const res = await getLocationDetails(selectedLocation);
+      if (!res.success) throw new Error(res.error);
+      return res.data;
+    },
+    enabled: !!selectedLocation,
   });
 
   const handleSort = (key: 'name' | 'occupancyPercent') => {
@@ -119,8 +131,15 @@ function PublicDashboard() {
   }
 
   const global = occupancy?.global;
-  const resources: OccupancyData[] = occupancy?.data ? Object.values(occupancy.data) : [];
+  let resources: OccupancyData[] = occupancy?.data ? Object.values(occupancy.data) : [];
   
+  if (hideFullResources) {
+    resources = resources.filter(r => r.occupancyPercent < 100);
+  }
+  
+  const totalResourceCount = resources.length;
+  const ecoResourceCount = resources.filter(r => /ecografie|eco|doppler|mamografie|mamo/i.test(r.name)).length;
+
   const sortedResources = [...resources].sort((a, b) => {
     if (!sortConfig) return 0;
     if (sortConfig.key === 'name') {
@@ -144,18 +163,36 @@ function PublicDashboard() {
     <div className="p-4 md:p-8 space-y-6 max-w-[1600px] mx-auto min-h-screen bg-base-300">
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-base-100 p-6 rounded-2xl shadow-xl border border-base-200">
          <div>
-            <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
-              Waitwhile Real-Time Occupancy
+            <h1 className="text-2xl md:text-3xl font-bold">
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
+                Waitwhile Real-Time Occupancy
+              </span>
+              {locationDetails?.name && (
+                <span className="text-white ml-2">
+                  - {locationDetails.name}
+                </span>
+              )}
             </h1>
             <p className="text-sm text-base-content/60 mt-1 font-mono">
               Live updates every 30s • {fromDate} to {toDate}
             </p>
          </div>
-         {isLoading && (
-           <div className="flex items-center gap-2 text-primary font-semibold bg-primary/10 px-4 py-2 rounded-full">
-             <span className="loading loading-ring loading-md"></span> Syncing Live Data...
-           </div>
-         )}
+         <div className="flex items-center gap-4">
+           <label className="flex items-center gap-2 cursor-pointer bg-base-200/50 px-3 py-2 rounded-lg border border-base-300">
+             <span className="label-text font-semibold text-sm whitespace-nowrap">Hide Full</span>
+             <input 
+               type="checkbox" 
+               className="toggle toggle-sm toggle-primary" 
+               checked={hideFullResources}
+               onChange={(e) => setHideFullResources(e.target.checked)}
+             />
+           </label>
+           {isLoading && (
+             <div className="flex items-center gap-2 text-primary font-semibold bg-primary/10 px-4 py-2 rounded-full">
+               <span className="loading loading-ring loading-md"></span> Syncing Live Data...
+             </div>
+           )}
+         </div>
       </div>
 
       {isError && (
@@ -166,35 +203,52 @@ function PublicDashboard() {
 
       {/* Global Overview Cards */}
       {global && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="stats shadow bg-base-100 border border-base-200">
-            <div className="stat">
-              <div className="stat-figure text-base-content/50"><Hash size={32} /></div>
-              <div className="stat-title font-semibold">Total Capacity Slots</div>
-              <div className="stat-value text-2xl"><AnimatedNumber value={global.total} /></div>
+            <div className="stat px-4 py-3">
+              <div className="stat-figure text-base-content/50"><Layers size={24} /></div>
+              <div className="stat-title font-semibold text-xs lg:text-sm">Resources</div>
+              <div className="stat-value text-xl lg:text-2xl"><AnimatedNumber value={totalResourceCount} /></div>
+              <div className="stat-desc text-[10px] lg:text-xs">Total showing</div>
             </div>
           </div>
           <div className="stats shadow bg-base-100 border border-base-200">
-            <div className="stat">
-              <div className="stat-figure text-success"><Activity size={32} /></div>
-              <div className="stat-title font-semibold">Created Bookings</div>
-              <div className="stat-value text-2xl"><AnimatedNumber value={global.booked} /></div>
-              <div className="stat-desc text-success">Scheduled</div>
+            <div className="stat px-4 py-3">
+              <div className="stat-figure text-secondary"><Stethoscope size={24} /></div>
+              <div className="stat-title font-semibold text-[10px] lg:text-sm line-clamp-1 truncate" title="Eco/Doppler/Mamografie">Eco/Doppler/Mamo</div>
+              <div className="stat-value text-xl lg:text-2xl text-secondary"><AnimatedNumber value={ecoResourceCount} /></div>
+              <div className="stat-desc text-[10px] lg:text-xs text-secondary">Matching</div>
             </div>
           </div>
           <div className="stats shadow bg-base-100 border border-base-200">
-            <div className="stat">
-              <div className="stat-figure text-info"><CalendarDays size={32} /></div>
-              <div className="stat-title font-semibold">Remaining Available</div>
-              <div className="stat-value text-2xl"><AnimatedNumber value={global.available} /></div>
-              <div className="stat-desc text-info">Free slots</div>
+            <div className="stat px-4 py-3">
+              <div className="stat-figure text-base-content/50"><Hash size={24} /></div>
+              <div className="stat-title font-semibold text-xs lg:text-sm">Total Slots</div>
+              <div className="stat-value text-xl lg:text-2xl"><AnimatedNumber value={global.total} /></div>
+              <div className="stat-desc text-[10px] lg:text-xs text-transparent select-none">-</div>
             </div>
           </div>
           <div className="stats shadow bg-base-100 border border-base-200">
-            <div className="stat">
-              <div className="stat-figure"><div className={`radial-progress transition-all duration-1000 ease-out ${getOccupancyColor(global.occupancyPercent)}`} style={{"--value": global.occupancyPercent, "--size": "3rem"} as any}></div></div>
-              <div className="stat-title font-semibold">Global Occupancy</div>
-              <div className={`stat-value text-2xl ${getOccupancyColor(global.occupancyPercent)}`}>
+            <div className="stat px-4 py-3">
+              <div className="stat-figure text-success"><Activity size={24} /></div>
+              <div className="stat-title font-semibold text-xs lg:text-sm">Bookings</div>
+              <div className="stat-value text-xl lg:text-2xl"><AnimatedNumber value={global.booked} /></div>
+              <div className="stat-desc text-[10px] lg:text-xs text-success">Scheduled</div>
+            </div>
+          </div>
+          <div className="stats shadow bg-base-100 border border-base-200">
+            <div className="stat px-4 py-3">
+              <div className="stat-figure text-info"><CalendarDays size={24} /></div>
+              <div className="stat-title font-semibold text-xs lg:text-sm">Available</div>
+              <div className="stat-value text-xl lg:text-2xl"><AnimatedNumber value={global.available} /></div>
+              <div className="stat-desc text-[10px] lg:text-xs text-info">Free slots</div>
+            </div>
+          </div>
+          <div className="stats shadow bg-base-100 border border-base-200">
+            <div className="stat px-4 py-3">
+              <div className="stat-figure"><div className={`radial-progress transition-all duration-1000 ease-out ${getOccupancyColor(global.occupancyPercent)}`} style={{"--value": global.occupancyPercent, "--size": "2.5rem", "--thickness": "3px"} as any}></div></div>
+              <div className="stat-title font-semibold text-xs lg:text-sm">Occupancy</div>
+              <div className={`stat-value text-xl lg:text-2xl ${getOccupancyColor(global.occupancyPercent)}`}>
                 <AnimatedNumber value={global.occupancyPercent} isPercent />%
               </div>
             </div>
