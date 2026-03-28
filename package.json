@@ -9,14 +9,15 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@auth0/nextjs-auth0": "^4.15.0",
     "@tanstack/react-query": "^5.90.21",
+    "appwrite": "^24.0.0",
     "axios": "^1.13.5",
     "daisyui": "^5.5.1-beta.2",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
+    "node-appwrite": "^23.0.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "xlsx": "^0.18.5"
