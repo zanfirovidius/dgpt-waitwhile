@@ -1,28 +1,67 @@
 'use client';
 
-import { getProject, Project } from '@/app/actions/projects';
+import { updateProject, deleteProject, getProject, Project } from '@/app/actions/projects';
 import { formatProjectDateRange } from '@/lib/project-dates';
-import { AlertCircle, ArrowLeft, MapPin } from 'lucide-react';
+import { AlertCircle, ArrowLeft, MapPin, MessageSquare, ExternalLink, Edit2, Trash2, Save, X } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 export default function ProjectDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState<Partial<Project>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const id = typeof params.id === 'string' ? params.id : params.id?.[0];
-    if (!id) return;
+  const id = typeof params.id === 'string' ? params.id : params.id?.[0];
 
-    getProject(id).then((res) => {
-      if (res.success && res.data) setProject(res.data);
-      else setError(res.error || 'Project not found');
-      setIsLoading(false);
-    });
-  }, [params.id]);
+  useEffect(() => {
+    if (!id) return;
+    refreshData();
+  }, [id]);
+
+  const refreshData = async () => {
+    const res = await getProject(id!);
+    if (res.success && res.data) {
+        setProject(res.data);
+        setEditData(res.data);
+    } else {
+        setError(res.error || 'Proiectul nu a fost găsit');
+    }
+    setIsLoading(false);
+  };
+
+  const handleUpdate = async () => {
+    if (!id || !editData) return;
+    setIsSaving(true);
+    const res = await updateProject(id, editData);
+    if (res.success) {
+      await refreshData();
+      setIsEditing(false);
+    } else {
+      alert(res.error || 'Eroare la actualizarea proiectului');
+    }
+    setIsSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!id) return;
+    if (!window.confirm('Sigur doriți să ștergeți acest proiect? Această acțiune va șterge, de asemenea, configurația de feedback și trimiterile asociate. Această acțiune nu poate fi anulată.')) return;
+    
+    setIsDeleting(true);
+    const res = await deleteProject(id);
+    if (res.success) {
+      router.push('/projects');
+    } else {
+      alert(res.error || 'Eroare la ștergerea proiectului');
+      setIsDeleting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -38,9 +77,9 @@ export default function ProjectDetailPage() {
         <div className="flex justify-center mb-4 text-error/30">
           <AlertCircle size={48} />
         </div>
-        <h3 className="text-lg font-semibold text-base-content/60">{error || 'Project not found'}</h3>
+        <h3 className="text-lg font-semibold text-base-content/60">{error || 'Proiectul nu a fost găsit'}</h3>
         <Link href="/projects" className="btn btn-sm btn-ghost mt-4 gap-2">
-          <ArrowLeft size={16} /> Back to Projects
+          <ArrowLeft size={16} /> Înapoi la Proiecte
         </Link>
       </div>
     );
@@ -55,47 +94,172 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between">
         <Link href="/projects" className="btn btn-ghost btn-sm gap-2 text-base-content/60 hover:text-base-content">
-          <ArrowLeft size={16} /> Projects
+          <ArrowLeft size={16} /> Proiecte
         </Link>
+        <div className="flex gap-2">
+            {!isEditing ? (
+              <>
+                <button onClick={() => setIsEditing(true)} className="btn btn-ghost btn-sm gap-2">
+                  <Edit2 size={14} /> Editează
+                </button>
+                <button onClick={handleDelete} className="btn btn-ghost btn-sm text-error/60 hover:text-error gap-2" disabled={isDeleting}>
+                  {isDeleting ? <span className="loading loading-spinner loading-xs"></span> : <Trash2 size={14} />} 
+                  Șterge
+                </button>
+              </>
+            ) : (
+                <>
+                  <button onClick={() => setIsEditing(false)} className="btn btn-ghost btn-sm gap-2" disabled={isSaving}>
+                    <X size={14} /> Anulează
+                  </button>
+                  <button onClick={handleUpdate} className="btn btn-primary btn-sm gap-2" disabled={isSaving}>
+                    {isSaving ? <span className="loading loading-spinner loading-xs"></span> : <Save size={14} />} 
+                    Salvează
+                  </button>
+                </>
+            )}
+        </div>
       </div>
 
       <div className="bg-base-100 border border-base-200 rounded-2xl p-6 sm:p-8 shadow-sm">
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-2xl font-extrabold tracking-tight text-base-content">{project.name}</h2>
-            <p className="text-sm text-primary font-medium mt-1 capitalize">{formattedDate}</p>
-          </div>
-          <div className="badge badge-outline badge-lg shrink-0 gap-1.5 py-3">
-            <MapPin size={14} className="text-primary" /> {project.locationName}
-          </div>
-        </div>
+        {isEditing ? (
+            <div className="space-y-4 animate-in fade-in duration-300">
+                <div className="form-control">
+                    <label className="label"><span className="label-text font-bold">Nume Proiect</span></label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered w-full" 
+                      value={editData.name || ''} 
+                      onChange={(e) => setEditData({ ...editData, name: e.target.value })} 
+                    />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="form-control">
+                        <label className="label"><span className="label-text font-bold">Data Început</span></label>
+                        <input 
+                          type="date" 
+                          className="input input-bordered w-full" 
+                          value={editData.startDate || ''} 
+                          onChange={(e) => setEditData({ ...editData, startDate: e.target.value })} 
+                        />
+                    </div>
+                    <div className="form-control">
+                        <label className="label"><span className="label-text font-bold">Data Sfârșit</span></label>
+                        <input 
+                          type="date" 
+                          className="input input-bordered w-full" 
+                          value={editData.endDate || ''} 
+                          onChange={(e) => setEditData({ ...editData, endDate: e.target.value })} 
+                        />
+                    </div>
+                </div>
+                <div className="form-control">
+                    <label className="label"><span className="label-text font-bold">Locație / Sală</span></label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered w-full" 
+                      value={editData.locationName || ''} 
+                      onChange={(e) => setEditData({ ...editData, locationName: e.target.value })} 
+                    />
+                </div>
 
-        <div className="divider"></div>
+                <div className="divider opacity-50 text-[10px] uppercase font-bold tracking-widest">Metadate Eveniment (Formular Public)</div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-base-200/50 rounded-xl p-4">
-            <p className="text-xs uppercase font-bold text-base-content/40 tracking-widest mb-1">Location ID</p>
-            <p className="text-sm font-mono text-base-content/70">{project.locationId}</p>
-          </div>
-          <div className="bg-base-200/50 rounded-xl p-4">
-            <p className="text-xs uppercase font-bold text-base-content/40 tracking-widest mb-1">Created</p>
-            <p className="text-sm text-base-content/70">
-              {new Date(project.$createdAt).toLocaleDateString('ro-RO', { year: 'numeric', month: 'short', day: 'numeric' })}
-            </p>
-          </div>
-          <div className="bg-base-200/50 rounded-xl p-4 sm:col-span-2">
-            <p className="text-xs uppercase font-bold text-base-content/40 tracking-widest mb-1">Project Window</p>
-            <p className="text-sm text-base-content/70">
-              {formatProjectDateRange(project, { year: 'numeric', month: 'short', day: 'numeric' })}
-            </p>
-          </div>
-        </div>
+                <div className="form-control">
+                    <label className="label"><span className="label-text font-bold">Nume Eveniment (Afișat)</span></label>
+                    <input 
+                      type="text" 
+                      className="input input-bordered w-full" 
+                      value={editData.eventName || ''} 
+                      onChange={(e) => setEditData({ ...editData, eventName: e.target.value })} 
+                    />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="form-control">
+                        <label className="label"><span className="label-text font-bold">Oraș</span></label>
+                        <input 
+                          type="text" 
+                          className="input input-bordered w-full" 
+                          value={editData.city || ''} 
+                          onChange={(e) => setEditData({ ...editData, city: e.target.value })} 
+                        />
+                    </div>
+                    <div className="form-control">
+                        <label className="label"><span className="label-text font-bold">Detalii Sală</span></label>
+                        <input 
+                          type="text" 
+                          className="input input-bordered w-full" 
+                          value={editData.venue || ''} 
+                          onChange={(e) => setEditData({ ...editData, venue: e.target.value })} 
+                        />
+                    </div>
+                </div>
+            </div>
+        ) : (
+            <>
+                <div className="flex items-start justify-between gap-4 mb-6">
+                <div>
+                    <h2 className="text-2xl font-extrabold tracking-tight text-base-content">{project.name}</h2>
+                    <p className="text-sm text-primary font-medium mt-1 capitalize">{formattedDate}</p>
+                </div>
+                <div className="badge badge-outline badge-lg shrink-0 gap-1.5 py-3">
+                    <MapPin size={14} className="text-primary" /> {project.locationName}
+                </div>
+                </div>
 
-        <div className="mt-6 text-sm text-base-content/40 italic">
-          More project details and actions coming soon...
-        </div>
+                <div className="divider"></div>
+
+                <div className="grid grid-cols-2 gap-x-12 gap-y-4 mb-8 text-sm">
+                   <div>
+                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Nume Eveniment</span>
+                       <span className="font-medium">{project.eventName || '-'}</span>
+                   </div>
+                   <div>
+                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Oraș / Sală</span>
+                       <span className="font-medium">{project.city || '-'}{project.city && project.venue ? ' / ' : ''}{project.venue || '-'}</span>
+                   </div>
+                </div>
+
+                <div className="bg-primary/5 rounded-2xl p-6 border border-primary/10">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                        <MessageSquare size={20} />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-base-content">Formular Feedback Public</h3>
+                        <p className="text-xs text-base-content/50">Colectați și gestionați răspunsurile proiectului</p>
+                    </div>
+                    </div>
+                    <Link 
+                    href={`/projects/${project.$id}/feedback`}
+                    className="btn btn-primary btn-sm gap-2"
+                    >
+                    Gestionează Feedback
+                    </Link>
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                    <div className={`badge badge-md gap-1.5 py-3 ${project.publicFeedbackFormStatus === 'active' ? 'badge-success text-success-content' : 'badge-ghost opacity-60'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${project.publicFeedbackFormStatus === 'active' ? 'bg-current animate-pulse' : 'bg-base-content/30'}`} />
+                    Status: {project.publicFeedbackFormStatus === 'active' ? 'Activ' : project.publicFeedbackFormStatus || 'Draft'}
+                    </div>
+                    {project.projectSlug && (
+                    <a 
+                        href={`/f/${project.projectSlug}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="badge badge-outline badge-md gap-1.5 py-3 hover:bg-base-content hover:text-base-100 transition-colors"
+                    >
+                        Vezi Formular Public <ExternalLink size={12} />
+                    </a>
+                    )}
+                </div>
+                </div>
+            </>
+        )}
       </div>
     </div>
   );

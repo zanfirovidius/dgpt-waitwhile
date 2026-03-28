@@ -9,3 +9,29 @@
 body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+.prose-markdown p {
+  margin-bottom: 0.5rem;
+}
+.prose-markdown ul {
+  margin-left: 1rem;
+  margin-bottom: 0.5rem;
+  list-style-type: disc;
+}
+.prose-markdown ol {
+  margin-left: 1rem;
+  margin-bottom: 0.5rem;
+  list-style-type: decimal;
+}
+.prose-markdown h1, .prose-markdown h2, .prose-markdown h3 {
+  font-weight: bold;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 11px;
+}
+.prose-markdown strong {
+  font-weight: bold;
+}
+.prose-markdown em {
+  font-style: italic;
+}

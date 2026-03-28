@@ -1,8 +1,8 @@
 'use client';
 
-import { getProjects, Project } from '@/app/actions/projects';
+import { getProjects, deleteProject, Project } from '@/app/actions/projects';
 import { formatProjectDateRange } from '@/lib/project-dates';
-import { ClipboardList, MapPin, Plus } from 'lucide-react';
+import { ClipboardList, MapPin, Plus, Trash2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -11,27 +11,45 @@ export default function ProjectsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const refreshProjects = () => {
+    setIsLoading(true);
     getProjects().then((res) => {
       if (res.success && res.data) setProjects(res.data);
       else setError(res.error || 'Failed to load projects');
       setIsLoading(false);
     });
+  };
+
+  useEffect(() => {
+    refreshProjects();
   }, []);
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this project? All associated data will be lost.')) return;
+    
+    const res = await deleteProject(id);
+    if (res.success) {
+      setProjects(projects.filter(p => p.$id !== id));
+    } else {
+      alert(res.error || 'Failed to delete');
+    }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-base-content">Projects</h2>
-          <p className="text-sm text-base-content/60 mt-1">Manage your Waitwhile projects</p>
+          <h2 className="text-2xl font-extrabold tracking-tight text-base-content">Proiecte</h2>
+          <p className="text-sm text-base-content/60 mt-1">Gestionați proiectele dvs. Waitwhile</p>
         </div>
         <Link href="/projects/new" className="btn btn-primary gap-2 shadow-lg shadow-primary/20">
-          <Plus size={18} /> New Project
+          <Plus size={18} /> Proiect Nou
         </Link>
       </div>
 
-      {isLoading && (
+      {isLoading && projects.length === 0 && (
         <div className="flex justify-center py-16">
           <span className="loading loading-spinner loading-lg text-primary"></span>
         </div>
@@ -44,35 +62,56 @@ export default function ProjectsPage() {
           <div className="flex justify-center mb-4 text-base-content/20">
             <ClipboardList size={48} />
           </div>
-          <h3 className="text-lg font-semibold text-base-content/60">No projects yet</h3>
-          <p className="text-sm text-base-content/40 mb-6">Create your first project to get started.</p>
-          <Link href="/projects/new" className="btn btn-primary btn-sm">Create Project</Link>
+          <h3 className="text-lg font-semibold text-base-content/60">Niciun proiect momentan</h3>
+          <p className="text-sm text-base-content/40 mb-6">Creați primul proiect pentru a începe.</p>
+          <Link href="/projects/new" className="btn btn-primary btn-sm">Creează Proiect</Link>
         </div>
       )}
 
       {!isLoading && projects.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((project) => (
-            <Link
+            <div
               key={project.$id}
-              href={`/projects/${project.$id}`}
-              className="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer group"
+              className="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary/30 transition-all group relative overflow-hidden"
             >
-              <div className="card-body p-5">
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="card-title text-base font-bold group-hover:text-primary transition-colors">{project.name}</h3>
-                  <span className="badge badge-outline badge-sm shrink-0">
-                    {formatProjectDateRange(project, { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
+              <div className="card-body p-6">
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <Link href={`/projects/${project.$id}`} className="flex-1">
+                    <h3 className="card-title text-base font-bold group-hover:text-primary transition-colors leading-tight">
+                        {project.name}
+                    </h3>
+                  </Link>
+                  <button 
+                    onClick={(e) => handleDelete(e, project.$id)}
+                    className="btn btn-ghost btn-xs text-error/20 hover:text-error hover:bg-error/5 -mr-2"
+                    title="Șterge Proiect"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <p className="text-sm text-base-content/60 flex items-center gap-1.5">
-                  <MapPin size={14} className="text-primary/60" /> {project.locationName}
-                </p>
-                <div className="card-actions justify-end mt-2">
-                  <span className="text-xs text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity">View →</span>
+
+                <div className="space-y-2 mb-4">
+                    <p className="text-xs text-base-content/50 flex items-center gap-1.5 line-clamp-1">
+                        <MapPin size={12} className="text-primary/40 shrink-0" /> {project.locationName}
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-base-content/30">
+                            {formatProjectDateRange(project, { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="card-actions pt-2 border-t border-base-200 mt-auto items-center justify-between">
+                  <div className={`badge badge-ghost badge-sm text-[9px] font-bold uppercase ${project.publicFeedbackFormStatus === 'active' ? 'text-success bg-success/5' : 'opacity-40'}`}>
+                    {project.publicFeedbackFormStatus || 'Draft'}
+                  </div>
+                  <Link href={`/projects/${project.$id}`} className="btn btn-primary btn-xs opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                    Gestionați <ArrowRight size={10} />
+                  </Link>
                 </div>
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}

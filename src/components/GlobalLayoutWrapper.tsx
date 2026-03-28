@@ -11,7 +11,9 @@ import {
   PlusCircle, 
   Mail,
   ChevronRight,
-  Heart
+  Heart,
+  Settings,
+  MessageSquare
 } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -27,7 +29,7 @@ export function GlobalLayoutWrapper({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isPublicRoute = pathname?.startsWith('/public') || pathname?.startsWith('/auth');
+  const isPublicRoute = pathname?.startsWith('/public') || pathname?.startsWith('/auth') || pathname?.startsWith('/f/');
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(!isPublicRoute);
 
@@ -85,7 +87,7 @@ export function GlobalLayoutWrapper({
       <div className="min-h-screen flex items-center justify-center bg-base-300">
         <div className="flex flex-col items-center gap-4">
           <span className="loading loading-spinner loading-lg text-primary"></span>
-          <p className="text-base-content/60 font-medium">Verifying access...</p>
+          <p className="text-base-content/60 font-medium">Se verifică accesul...</p>
         </div>
       </div>
     );
@@ -103,7 +105,7 @@ export function GlobalLayoutWrapper({
             </div>
             <div>
               <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary leading-tight">Waitwhile Sync</h1>
-              <p className="text-[10px] text-base-content/60 leading-tight">DGPT User Generator</p>
+              <p className="text-[10px] text-base-content/60 leading-tight">Generator Utilizatori DGPT</p>
             </div>
           </div>
 
@@ -111,7 +113,7 @@ export function GlobalLayoutWrapper({
           <div className="flex items-center gap-3">
             {sessionUser && (
               <a href="/admin/invite" className="btn btn-sm btn-outline btn-primary uppercase text-[10px] tracking-wider font-bold hidden sm:inline-flex">
-                Invite Admin
+                Invită Admin
               </a>
             )}
 
@@ -119,7 +121,7 @@ export function GlobalLayoutWrapper({
               <div className="flex items-center gap-3 pl-3 border-l border-base-200">
                 <div className="flex flex-col items-end">
                   <span className="text-sm font-semibold leading-tight">{sessionUser.name}</span>
-                  <a href="#" onClick={handleLogout} className="text-[10px] text-error hover:underline uppercase font-bold tracking-wider">Log Out</a>
+                  <a href="#" onClick={handleLogout} className="text-[10px] text-error hover:underline uppercase font-bold tracking-wider">Deconectare</a>
                 </div>
                 <div className="avatar">
                   <div className="w-9 h-9 rounded-full border-2 border-primary overflow-hidden">
@@ -128,7 +130,7 @@ export function GlobalLayoutWrapper({
                 </div>
               </div>
             ) : (
-              <a href="/auth/login" className="btn btn-sm btn-primary shadow-lg shadow-primary/20">Log In</a>
+              <a href="/auth/login" className="btn btn-sm btn-primary shadow-lg shadow-primary/20">Autentificare</a>
             )}
           </div>
         </div>
@@ -139,12 +141,12 @@ export function GlobalLayoutWrapper({
         {/* Left Sidebar */}
         <aside className="w-52 shrink-0 bg-base-100 border-r border-base-200 flex flex-col gap-1 py-6 px-3 sticky h-[calc(100vh-57px)] overflow-y-auto">
           {/* Zone 1: Users & Sandbox */}
-          <p className="text-[10px] uppercase font-bold text-base-content/40 tracking-widest px-2 mb-1">User Management</p>
+          <p className="text-[10px] uppercase font-bold text-base-content/40 tracking-widest px-2 mb-1">Gestionare Utilizatori</p>
           <a href="/" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200">
-            <UserPlus size={16} /> Add User
+            <UserPlus size={16} /> Adaugă Utilizator
           </a>
           <a href="/delete" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-error hover:text-error">
-            <UserMinus size={16} /> Remove User
+            <UserMinus size={16} /> Șterge Utilizator
           </a>
           <a href="/sandbox" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-info">
             <Beaker size={16} /> Sandbox
@@ -153,23 +155,31 @@ export function GlobalLayoutWrapper({
           <div className="divider my-2"></div>
 
           {/* Zone 3: Projects */}
-          <p className="text-[10px] uppercase font-bold text-base-content/40 tracking-widest px-2 mb-1">Projects</p>
+          <p className="text-[10px] uppercase font-bold text-base-content/40 tracking-widest px-2 mb-1">Proiecte</p>
           <a href="/projects" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-success">
-            <ClipboardList size={16} /> All Projects
+            <ClipboardList size={16} /> Toate Proiectele
           </a>
           <a href="/projects/new" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200">
-            <PlusCircle size={16} /> New Project
+            <PlusCircle size={16} /> Proiect Nou
           </a>
 
           <div className="divider my-2"></div>
 
           {/* Zone 2: Occupancy & Resources */}
-          <p className="text-[10px] uppercase font-bold text-base-content/40 tracking-widest px-2 mb-1">Data & Resources</p>
+          <p className="text-[10px] uppercase font-bold text-base-content/40 tracking-widest px-2 mb-1">Date și Resurse</p>
           <a href="/occupancy" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-warning">
-            <BarChart3 size={16} /> Occupancy
+            <BarChart3 size={16} /> Ocupare
           </a>
           <a href="/resources" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-accent">
-            <Package size={16} /> Resources
+            <Package size={16} /> Resurse
+          </a>
+
+          <div className="divider my-2"></div>
+
+          {/* Zone 4: Feedback */}
+          <p className="text-[10px] uppercase font-bold text-base-content/40 tracking-widest px-2 mb-1">Feedback Public</p>
+          <a href="/admin/settings" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-primary">
+            <Settings size={16} /> Setări Globale
           </a>
 
           {/* Zone 3 on mobile only */}
@@ -177,7 +187,7 @@ export function GlobalLayoutWrapper({
             <>
               <div className="divider my-2 sm:hidden"></div>
               <a href="/admin/invite" className="btn btn-sm btn-outline btn-primary justify-start w-full gap-2 sm:hidden uppercase text-[10px] tracking-wider font-bold">
-                <Mail size={16} /> Invite Admin
+                <Mail size={16} /> Invită Admin
               </a>
             </>
           )}
@@ -193,7 +203,7 @@ export function GlobalLayoutWrapper({
 
       <footer className="py-4 text-center text-sm text-base-content/50 border-t border-base-200 bg-base-100">
         <p className="flex items-center justify-center gap-1">
-          Generated with <Heart size={14} className="text-error fill-error" /> for Din Grija Pentru Tine
+          Creat cu <Heart size={14} className="text-error fill-error" /> pentru Din Grija Pentru Tine
         </p>
       </footer>
     </div>
