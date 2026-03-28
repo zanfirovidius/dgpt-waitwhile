@@ -22,6 +22,17 @@ export interface PlatformSettings {
   defaultFeedbackConsentText?: string;
   defaultFeedbackSuccessMessage?: string;
   defaultPublicFormStatusOnCreate?: string;
+  // Attendance Module Defaults
+  defaultAttendanceAccessMode?: string;
+  defaultAttendanceTokenTtl?: number;
+  defaultAttendanceInstructions?: string;
+  defaultAttendancePrivacyNotice?: string;
+  defaultAttendanceSuccessMessageCheckIn?: string;
+  defaultAttendanceSuccessMessageCheckOut?: string;
+  defaultCoordinatorValidationRequired?: boolean;
+  defaultSignatureRequiredAtCheckout?: boolean;
+  defaultBreakFieldEnabled?: boolean;
+  defaultAttendanceRoles?: string[];
 }
 
 /**
@@ -42,7 +53,18 @@ export async function getPlatformSettings(): Promise<{ success: boolean; data?: 
         defaultFeedbackIntroText: 'Opinia dvs. despre evenimentul nostru este foarte importantă pentru noi.',
         defaultFeedbackConsentText: 'Sunt de acord să fiu contactat dacă feedback-ul meu necesită clarificări suplimentare.',
         defaultFeedbackSuccessMessage: 'Vă mulțumim! Răspunsul dvs. a fost înregistrat.',
-        defaultPublicFormStatusOnCreate: 'draft'
+        defaultPublicFormStatusOnCreate: 'draft',
+        // Attendance Defaults
+        defaultAttendanceAccessMode: 'token',
+        defaultAttendanceTokenTtl: 30, // 30 days
+        defaultAttendanceInstructions: 'Vă rugăm să folosiți acest formular pentru a marca prezența la eveniment.',
+        defaultAttendancePrivacyNotice: 'Datele dvs. sunt colectate exclusiv în scopul gestionării prezenței voluntarilor și a evidenței orelor de voluntariat.',
+        defaultAttendanceSuccessMessageCheckIn: 'Check-in reușit! Spor la treabă!',
+        defaultAttendanceSuccessMessageCheckOut: 'Check-out reușit! Vă mulțumim pentru implicare!',
+        defaultCoordinatorValidationRequired: true,
+        defaultSignatureRequiredAtCheckout: true,
+        defaultBreakFieldEnabled: true,
+        defaultAttendanceRoles: ['ORGANIZATOR', 'ASISTENT', 'MEDIC', 'SECRETARIAT', 'VOLUNTAR', 'PROTOCOL', 'ȘEF-CABINET']
       };
       const doc = await databases.createDocument(DATABASE_ID, SETTINGS_COLLECTION_ID, ID.unique(), initial);
       return { success: true, data: JSON.parse(JSON.stringify(doc)) as PlatformSettings };

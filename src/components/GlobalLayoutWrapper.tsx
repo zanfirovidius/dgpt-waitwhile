@@ -29,7 +29,7 @@ export function GlobalLayoutWrapper({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isPublicRoute = pathname?.startsWith('/public') || pathname?.startsWith('/auth') || pathname?.startsWith('/f/');
+  const isPublicRoute = pathname?.startsWith('/public') || pathname?.startsWith('/auth') || pathname?.startsWith('/f/') || pathname?.startsWith('/a/');
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(!isPublicRoute);
 

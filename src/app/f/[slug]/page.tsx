@@ -99,13 +99,28 @@ export default function PublicFeedbackFormPage() {
 
   if (submitted) return (
     <div className="min-h-screen flex items-center justify-center bg-base-200 px-4 animate-in fade-in zoom-in duration-500">
-      <div className="max-w-md w-full bg-base-100 p-8 rounded-3xl shadow-xl text-center space-y-6">
-        <div className="w-20 h-20 bg-success/20 text-success rounded-full flex items-center justify-center mx-auto shadow-inner">
-          <CheckCircle2 size={40} />
+      <div className="max-w-md w-full bg-base-100 p-8 rounded-[2.5rem] shadow-2xl text-center space-y-8 border border-base-300/50">
+        <div className="space-y-2">
+            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-primary opacity-60">Formular Feedback</div>
+            <div className="text-xs font-black uppercase tracking-widest opacity-30">Din Grija Pentru Tine</div>
         </div>
-        <h1 className="text-2xl font-bold">{project.config.feedbackFormTitle}</h1>
-        <p className="text-base-content/70">{project.config.feedbackSuccessMessage}</p>
-        <div className="pt-6 border-t border-base-200 space-y-4">
+
+        <div className="space-y-4">
+            <div className="w-24 h-24 bg-success/10 text-success rounded-full flex items-center justify-center mx-auto shadow-inner mb-2">
+                <CheckCircle2 size={48} />
+            </div>
+            <h1 className="text-3xl font-black tracking-tight text-base-content">Vă mulțumim!</h1>
+            <p className="text-base font-medium text-base-content/60 leading-relaxed px-4">
+                Feedback-ul dumneavoastră a fost înregistrat cu succes.
+            </p>
+        </div>
+
+        <div className="pt-8 border-t border-base-200 space-y-6">
+             <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-base-content/40">Operator</p>
+                <p className="text-xs font-bold text-base-content/70">{project.config.operatorName}</p>
+             </div>
+
              <button 
                 onClick={() => {
                     setSubmitted(false);
@@ -120,13 +135,14 @@ export default function PublicFeedbackFormPage() {
                         consentToBeContacted: false,
                     });
                 }}
-                className="btn btn-outline btn-primary btn-block rounded-2xl"
+                className="btn btn-primary btn-block btn-lg rounded-2xl shadow-xl shadow-primary/20 gap-3"
              >
-                Trimite un alt feedback
+                <ChevronRight size={20} className="rotate-180" />
+                Înapoi la formular
              </button>
+             
              <div className="pt-2">
-                <p className="text-xs text-base-content/40 mb-1 italic">Operator: {project.config.operatorName}</p>
-                <p className="text-[10px] text-base-content/20 uppercase tracking-widest font-bold">Din Grija Pentru Tine</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-base-content/20 italic">Din Grija Pentru Tine</p>
              </div>
         </div>
       </div>
@@ -266,16 +282,16 @@ export default function PublicFeedbackFormPage() {
                 </div>
                 
                 {(formData.fullName || formData.email || formData.phone) && (
-                    <div className="form-control p-4 bg-primary/5 rounded-2xl border border-primary/10 animate-in slide-in-from-top-2">
-                        <label className="label cursor-pointer justify-start gap-3 items-start p-0">
+                    <div className="form-control p-4 bg-primary/5 rounded-2xl border border-primary/10 animate-in slide-in-from-top-2 overflow-hidden w-full">
+                        <label className="flex cursor-pointer justify-start gap-4 items-start p-0 w-full group">
                             <input 
                                 type="checkbox" 
                                 required
                                 checked={formData.consentToBeContacted}
                                 onChange={(e) => setFormData({ ...formData, consentToBeContacted: e.target.checked })}
-                                className="checkbox checkbox-primary checkbox-sm mt-0.5 shrink-0" 
+                                className="checkbox checkbox-primary checkbox-sm mt-0.5 shrink-0 transition-transform group-hover:scale-110" 
                             />
-                            <span className="label-text text-xs leading-snug flex-1 whitespace-normal">
+                            <span className="label-text text-[11px] sm:text-xs leading-relaxed flex-1 break-words opacity-80 group-hover:opacity-100 transition-opacity">
                                 {project.config.feedbackFormConsentText}
                             </span>
                         </label>

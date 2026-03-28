@@ -2,7 +2,11 @@
 
 import { updateProject, deleteProject, getProject, Project } from '@/app/actions/projects';
 import { formatProjectDateRange } from '@/lib/project-dates';
-import { AlertCircle, ArrowLeft, MapPin, MessageSquare, ExternalLink, Edit2, Trash2, Save, X } from 'lucide-react';
+import { getProjectFeedbackConfig, FeedbackConfig } from '@/app/actions/feedback-config';
+import { getProjectAttendanceConfig, AttendanceConfig } from '@/app/actions/attendance-config';
+import { 
+  AlertCircle, ArrowLeft, MapPin, MessageSquare, ExternalLink, Edit2, Trash2, Save, X, Clock
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -14,6 +18,8 @@ export default function ProjectDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Project>>({});
+  const [feedbackConfig, setFeedbackConfig] = useState<FeedbackConfig | null>(null);
+  const [attendanceConfig, setAttendanceConfig] = useState<AttendanceConfig | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState('');
@@ -30,6 +36,15 @@ export default function ProjectDetailPage() {
     if (res.success && res.data) {
         setProject(res.data);
         setEditData(res.data);
+        
+        // Fetch configurations in parallel
+        const [fRes, aRes] = await Promise.all([
+          getProjectFeedbackConfig(id!),
+          getProjectAttendanceConfig(id!)
+        ]);
+        if (fRes.success) setFeedbackConfig(fRes.data!);
+        if (aRes.success) setAttendanceConfig(aRes.data!);
+
     } else {
         setError(res.error || 'Proiectul nu a fost găsit');
     }
@@ -223,40 +238,85 @@ export default function ProjectDetailPage() {
                 </div>
 
                 <div className="bg-primary/5 rounded-2xl p-6 border border-primary/10">
-                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
                         <MessageSquare size={20} />
-                    </div>
-                    <div>
+                      </div>
+                      <div>
                         <h3 className="font-bold text-base-content">Formular Feedback Public</h3>
                         <p className="text-xs text-base-content/50">Colectați și gestionați răspunsurile proiectului</p>
-                    </div>
+                      </div>
                     </div>
                     <Link 
-                    href={`/projects/${project.$id}/feedback`}
-                    className="btn btn-primary btn-sm gap-2"
+                        href={`/projects/${project.$id}/feedback`}
+                        className="btn btn-primary btn-sm gap-2"
                     >
-                    Gestionează Feedback
+                        Gestionează Feedback
                     </Link>
-                </div>
-                
-                <div className="flex flex-wrap gap-2">
-                    <div className={`badge badge-md gap-1.5 py-3 ${project.publicFeedbackFormStatus === 'active' ? 'badge-success text-success-content' : 'badge-ghost opacity-60'}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${project.publicFeedbackFormStatus === 'active' ? 'bg-current animate-pulse' : 'bg-base-content/30'}`} />
-                    Status: {project.publicFeedbackFormStatus === 'active' ? 'Activ' : project.publicFeedbackFormStatus || 'Draft'}
-                    </div>
-                    {project.projectSlug && (
-                    <a 
-                        href={`/f/${project.projectSlug}`} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="badge badge-outline badge-md gap-1.5 py-3 hover:bg-base-content hover:text-base-100 transition-colors"
-                    >
-                        Vezi Formular Public <ExternalLink size={12} />
-                    </a>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {feedbackConfig && (
+                      <>
+                        <div className={`badge badge-outline badge-md gap-1.5 py-3 ${feedbackConfig.publicFeedbackFormStatus === 'active' ? 'opacity-100' : 'opacity-60'}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${feedbackConfig.publicFeedbackFormStatus === 'active' ? 'bg-success animate-pulse' : 'bg-base-content/30'}`} />
+                          {feedbackConfig.publicFeedbackFormStatus === 'active' ? 'Activ' : feedbackConfig.publicFeedbackFormStatus === 'inactive' ? 'Inactiv' : 'Schiță'}
+                        </div>
+                        {feedbackConfig.publicFeedbackFormStatus === 'active' && project.projectSlug && (
+                          <a 
+                            href={`/f/${project.projectSlug}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="badge badge-outline badge-md gap-1.5 py-3 hover:bg-base-content hover:text-base-100 transition-colors"
+                          >
+                            Vezi Formular Feedback <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </>
                     )}
+                  </div>
                 </div>
+
+                <div className="bg-secondary/5 rounded-2xl p-6 border border-secondary/10 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center text-secondary">
+                        <Clock size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base-content">Prezență Voluntari</h3>
+                        <p className="text-xs text-base-content/50">Gestionați orele și semnăturile echipei</p>
+                      </div>
+                    </div>
+                    <Link 
+                      href={`/projects/${project.$id}/attendance`}
+                      className="btn btn-secondary btn-sm gap-2"
+                    >
+                      Gestionează Prezență
+                    </Link>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {attendanceConfig && (
+                      <>
+                        <div className={`badge badge-outline badge-md gap-1.5 py-3 ${attendanceConfig.attendanceEnabled ? 'opacity-100' : 'opacity-60'}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${attendanceConfig.attendanceEnabled ? 'bg-success animate-pulse' : 'bg-base-content/30'}`} />
+                          {attendanceConfig.attendanceEnabled ? 'Activ' : 'Inactiv'}
+                        </div>
+                        {attendanceConfig.attendanceEnabled && project.projectSlug && (
+                          <a 
+                            href={`/a/${project.projectSlug}/attendance`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="badge badge-outline badge-md gap-1.5 py-3 hover:bg-base-content hover:text-base-100 transition-colors"
+                          >
+                            Vezi Formular Prezență <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
             </>
         )}

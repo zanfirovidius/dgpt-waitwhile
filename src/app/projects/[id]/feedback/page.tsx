@@ -9,9 +9,10 @@ import {
   ArrowLeft, Save, RefreshCw, MessageSquare, List, Settings, 
   CheckCircle2, AlertCircle, Clock, Trash2, ExternalLink,
   ChevronRight, MoreVertical, Search, Download,
-  User, Mail, Phone, Calendar, MapPin, ShieldCheck
+  User, Mail, Phone, Calendar, MapPin, ShieldCheck, QrCode
 } from 'lucide-react';
 import Link from 'next/link';
+import QRCodeModule from '@/components/QRCodeModule';
 
 export default function ProjectFeedbackPage() {
   const params = useParams();
@@ -117,6 +118,12 @@ export default function ProjectFeedbackPage() {
 
   const missingItems = JSON.parse(config.setupMissingItemsJson || '[]');
 
+  const stats = {
+    total: submissions.length,
+    pending: submissions.filter(s => s.status === 'new' || s.status === 'in_review').length,
+    resolved: submissions.filter(s => s.status === 'resolved').length
+  };
+
   return (
     <>
       <div className="space-y-6">
@@ -165,6 +172,34 @@ export default function ProjectFeedbackPage() {
           <span className="text-sm font-medium">{message.text}</span>
         </div>
       )}
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500 mb-2">
+        <div className="stats shadow-sm bg-base-100 border border-base-200 rounded-3xl overflow-hidden">
+          <div className="stat">
+            <div className="stat-figure text-primary opacity-20"><MessageSquare size={40} /></div>
+            <div className="stat-title font-bold text-xs uppercase tracking-widest opacity-60">Total Feedback</div>
+            <div className="stat-value text-primary">{stats.total}</div>
+            <div className="stat-desc font-medium text-[10px]">Toate categoriile</div>
+          </div>
+        </div>
+        <div className="stats shadow-sm bg-base-100 border border-base-200 rounded-3xl overflow-hidden">
+          <div className="stat">
+            <div className="stat-figure text-warning opacity-20"><AlertCircle size={40} /></div>
+            <div className="stat-title font-bold text-xs uppercase tracking-widest opacity-60">În Așteptare / Revizuire</div>
+            <div className="stat-value text-warning">{stats.pending}</div>
+            <div className="stat-desc font-medium text-[10px]">Necesită atenție imediată</div>
+          </div>
+        </div>
+        <div className="stats shadow-sm bg-base-100 border border-base-200 rounded-3xl overflow-hidden">
+          <div className="stat">
+            <div className="stat-figure text-success opacity-20"><CheckCircle2 size={40} /></div>
+            <div className="stat-title font-bold text-xs uppercase tracking-widest opacity-60">Rezolvate</div>
+            <div className="stat-value text-success">{stats.resolved}</div>
+            <div className="stat-desc font-medium text-[10px]">Feedback-uri finalizate</div>
+          </div>
+        </div>
+      </div>
 
       {/* Tabs */}
       <div className="tabs tabs-lifted">
@@ -361,7 +396,7 @@ export default function ProjectFeedbackPage() {
                     />
                  </div>
 
-                 <div className="form-control flex flex-col items-start w-full">
+                 <div className="form-control w-full">
                     <label className="label pb-1"><span className="label-text font-bold">Text Introductiv</span></label>
                     <textarea 
                       value={config.feedbackFormIntroText} 
@@ -370,7 +405,7 @@ export default function ProjectFeedbackPage() {
                     />
                  </div>
                  
-                 <div className="form-control flex flex-col items-start w-full">
+                 <div className="form-control w-full">
                     <label className="label pb-1"><span className="label-text font-bold">Mesaj de Succes</span></label>
                     <textarea 
                       value={config.feedbackSuccessMessage} 
@@ -381,6 +416,13 @@ export default function ProjectFeedbackPage() {
              </div>
 
              <div className="space-y-6">
+                 <QRCodeModule 
+                    url={typeof window !== 'undefined' ? `${window.location.origin}/f/${config.projectSlug}` : ''}
+                    title={project.name}
+                    subtitle="Scanează pentru a lăsa un feedback"
+                    active={config.publicFeedbackFormStatus === 'active'}
+                 />
+
                  <div className="card bg-base-200/30 border border-base-200">
                     <div className="card-body p-4 space-y-4">
                         <h3 className="text-sm font-bold uppercase tracking-wider text-base-content/40">Suprascriere Operator</h3>
@@ -405,7 +447,7 @@ export default function ProjectFeedbackPage() {
                             />
                         </div>
 
-                        <div className="form-control flex flex-col items-start w-full">
+                        <div className="form-control w-full">
                             <label className="label pb-1"><span className="label-text font-medium text-xs">Notă de Confidențialitate (Markdown/Text)</span></label>
                             <textarea 
                               value={config.privacyNoticeText} 

@@ -6,11 +6,12 @@ import { createAdminClient, createSessionClient } from '../../lib/appwrite-serve
 import { normalizeProjectDates } from '@/lib/project-dates';
 import { normalizeToSlug, ensureUniqueProjectSlug } from '@/lib/slug';
 import { getPlatformSettings } from './platform';
-import { validateProjectFeedbackSetup } from '@/lib/setup-validation';
+import { validateProjectFeedbackSetup, validateProjectAttendanceSetup } from '@/lib/setup-validation';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 const PROJECTS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!;
 const FEEDBACK_CONFIG_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_FEEDBACK_CONFIG_COLLECTION_ID!;
+const ATTENDANCE_CONFIG_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ATTENDANCE_CONFIG_COLLECTION_ID || 'project_attendance_config';
 
 export interface Project {
   $id: string;
@@ -96,6 +97,30 @@ export async function createProject(data: {
       ...feedbackConfig,
       setupCompleted: validation.setupCompleted,
       setupMissingItemsJson: JSON.stringify(validation.missingItems),
+    });
+
+    // 6. Create the linked Attendance Config with inherited defaults
+    const attendanceConfig = {
+      projectId: projectId,
+      projectSlug: uniqueSlug,
+      attendanceEnabled: true,
+      attendanceAccessMode: defaults?.defaultAttendanceAccessMode || 'token',
+      attendanceAccessToken: defaults?.defaultAttendanceAccessMode === 'token' ? Math.random().toString(36).substring(2, 12) : '',
+      instructions: defaults?.defaultAttendanceInstructions || '',
+      privacyNotice: defaults?.defaultAttendancePrivacyNotice || '',
+      successMessageCheckIn: defaults?.defaultAttendanceSuccessMessageCheckIn || '',
+      successMessageCheckOut: defaults?.defaultAttendanceSuccessMessageCheckOut || '',
+      coordinatorValidationRequired: defaults?.defaultCoordinatorValidationRequired ?? true,
+      signatureRequiredAtCheckout: defaults?.defaultSignatureRequiredAtCheckout ?? true,
+      breakFieldEnabled: defaults?.defaultBreakFieldEnabled ?? true,
+    };
+
+    const attValidation = validateProjectAttendanceSetup(attendanceConfig);
+
+    await databases.createDocument(DATABASE_ID, ATTENDANCE_CONFIG_COLLECTION_ID, projectId, {
+      ...attendanceConfig,
+      setupCompleted: attValidation.setupCompleted,
+      setupMissingItemsJson: JSON.stringify(attValidation.missingItems),
     });
 
     return { success: true, projectId };
@@ -201,6 +226,13 @@ export async function deleteProject(id: string): Promise<{ success: boolean; err
     // 1. Delete associated configuration
     try {
         await databases.deleteDocument(DATABASE_ID, FEEDBACK_CONFIG_COLLECTION_ID, id);
+    } catch (e) {
+        // Silently skip if config doesn't exist
+    }
+
+    // 1b. Delete associated attendance configuration
+    try {
+        await databases.deleteDocument(DATABASE_ID, ATTENDANCE_CONFIG_COLLECTION_ID, id);
     } catch (e) {
         // Silently skip if config doesn't exist
     }

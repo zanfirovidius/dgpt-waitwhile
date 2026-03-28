@@ -32,3 +32,32 @@ export function validateProjectFeedbackSetup(config: ProjectFeedbackConfig) {
     missingItems,
   };
 }
+
+export interface ProjectAttendanceConfig {
+  projectId: string;
+  attendanceEnabled: boolean;
+  attendanceAccessMode: string;
+  attendanceAccessToken?: string;
+  attendanceAccessPinHash?: string;
+  instructions?: string;
+  privacyNotice?: string;
+  [key: string]: any;
+}
+
+export function validateProjectAttendanceSetup(config: ProjectAttendanceConfig) {
+  const missingItems: string[] = [];
+
+  if (!config.attendanceEnabled) return { setupCompleted: false, missingItems: ['Modul Dezactivat'] };
+  
+  if (!config.attendanceAccessMode) missingItems.push('Mod Acces (Token/PIN)');
+  if (config.attendanceAccessMode === 'token' && !config.attendanceAccessToken) missingItems.push('Token Acces');
+  if (config.attendanceAccessMode === 'pin' && !config.attendanceAccessPinHash) missingItems.push('PIN Acces');
+  
+  if (!config.instructions) missingItems.push('Instrucțiuni Prezență');
+  if (!config.privacyNotice || config.privacyNotice.length < 50) missingItems.push('Notă Confidențialitate (min. 50 caractere)');
+
+  return {
+    setupCompleted: missingItems.length === 0,
+    missingItems,
+  };
+}
