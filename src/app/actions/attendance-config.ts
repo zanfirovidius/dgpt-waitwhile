@@ -31,7 +31,7 @@ export interface AttendanceConfig {
 
 export async function getProjectAttendanceConfig(projectId: string): Promise<{ success: boolean; data?: AttendanceConfig; error?: string }> {
   try {
-    const { databases } = await createSessionClient();
+    const { databases } = await createAdminClient();
     try {
       const doc = await databases.getDocument(DATABASE_ID, ATTENDANCE_CONFIG_COLLECTION_ID, projectId);
       return { success: true, data: JSON.parse(JSON.stringify(doc)) as AttendanceConfig };
