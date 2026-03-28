@@ -33,6 +33,7 @@ export interface PlatformSettings {
   defaultSignatureRequiredAtCheckout?: boolean;
   defaultBreakFieldEnabled?: boolean;
   defaultAttendanceRoles?: string[];
+  defaultWaitwhileEmailDomainSuffix?: string;
 }
 
 /**
@@ -64,7 +65,8 @@ export async function getPlatformSettings(): Promise<{ success: boolean; data?: 
         defaultCoordinatorValidationRequired: true,
         defaultSignatureRequiredAtCheckout: true,
         defaultBreakFieldEnabled: true,
-        defaultAttendanceRoles: ['ORGANIZATOR', 'ASISTENT', 'MEDIC', 'SECRETARIAT', 'VOLUNTAR', 'PROTOCOL', 'ȘEF-CABINET']
+        defaultAttendanceRoles: ['ORGANIZATOR', 'ASISTENT', 'MEDIC', 'SECRETARIAT', 'VOLUNTAR', 'PROTOCOL', 'ȘEF-CABINET'],
+        defaultWaitwhileEmailDomainSuffix: '@dgpt.ro'
       };
       const doc = await databases.createDocument(DATABASE_ID, SETTINGS_COLLECTION_ID, ID.unique(), initial);
       return { success: true, data: JSON.parse(JSON.stringify(doc)) as PlatformSettings };

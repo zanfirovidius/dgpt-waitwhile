@@ -1,15 +1,30 @@
 'use client';
 
-import { updateProject, deleteProject, getProject, Project } from '@/app/actions/projects';
+import { AttendanceConfig, getProjectAttendanceConfig } from '@/app/actions/attendance-config';
+import { FeedbackConfig, getProjectFeedbackConfig } from '@/app/actions/feedback-config';
+import { deleteProject, getProject, Project, updateProject } from '@/app/actions/projects';
 import { formatProjectDateRange } from '@/lib/project-dates';
-import { getProjectFeedbackConfig, FeedbackConfig } from '@/app/actions/feedback-config';
-import { getProjectAttendanceConfig, AttendanceConfig } from '@/app/actions/attendance-config';
-import { 
-  AlertCircle, ArrowLeft, MapPin, MessageSquare, ExternalLink, Edit2, Trash2, Save, X, Clock
+import {
+  AlertCircle, ArrowLeft,
+  Clock,
+  Edit2,
+  ExternalLink,
+  MapPin, MessageSquare,
+  Save,
+  Trash2,
+  Users,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+
+type LoadedProjectState = {
+  project: Project | null;
+  feedbackConfig: FeedbackConfig | null;
+  attendanceConfig: AttendanceConfig | null;
+  error: string;
+};
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -26,30 +41,72 @@ export default function ProjectDetailPage() {
 
   const id = typeof params.id === 'string' ? params.id : params.id?.[0];
 
-  useEffect(() => {
-    if (!id) return;
-    refreshData();
+  const loadProjectState = useCallback(async (): Promise<LoadedProjectState | null> => {
+    if (!id) {
+      return null;
+    }
+
+    const res = await getProject(id);
+
+    if (!res.success || !res.data) {
+      return {
+        project: null,
+        feedbackConfig: null,
+        attendanceConfig: null,
+        error: res.error || 'Proiectul nu a fost găsit',
+      };
+    }
+
+    const [fRes, aRes] = await Promise.all([
+      getProjectFeedbackConfig(id),
+      getProjectAttendanceConfig(id),
+    ]);
+
+    return {
+      project: res.data,
+      feedbackConfig: fRes.success ? fRes.data ?? null : null,
+      attendanceConfig: aRes.success ? aRes.data ?? null : null,
+      error: '',
+    };
   }, [id]);
 
-  const refreshData = async () => {
-    const res = await getProject(id!);
-    if (res.success && res.data) {
-        setProject(res.data);
-        setEditData(res.data);
-        
-        // Fetch configurations in parallel
-        const [fRes, aRes] = await Promise.all([
-          getProjectFeedbackConfig(id!),
-          getProjectAttendanceConfig(id!)
-        ]);
-        if (fRes.success) setFeedbackConfig(fRes.data!);
-        if (aRes.success) setAttendanceConfig(aRes.data!);
+  const refreshData = useCallback(async () => {
+    const loadedState = await loadProjectState();
 
-    } else {
-        setError(res.error || 'Proiectul nu a fost găsit');
+    if (!loadedState) {
+      return;
     }
+
+    setProject(loadedState.project);
+    setEditData(loadedState.project ?? {});
+    setFeedbackConfig(loadedState.feedbackConfig);
+    setAttendanceConfig(loadedState.attendanceConfig);
+    setError(loadedState.error);
     setIsLoading(false);
-  };
+  }, [loadProjectState]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const loadedState = await loadProjectState();
+
+      if (!loadedState || cancelled) {
+        return;
+      }
+
+      setProject(loadedState.project);
+      setEditData(loadedState.project ?? {});
+      setFeedbackConfig(loadedState.feedbackConfig);
+      setAttendanceConfig(loadedState.attendanceConfig);
+      setError(loadedState.error);
+      setIsLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadProjectState]);
 
   const handleUpdate = async () => {
     if (!id || !editData) return;
@@ -108,7 +165,7 @@ export default function ProjectDetailPage() {
   });
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-8xl">
       <div className="flex items-center justify-between">
         <Link href="/projects" className="btn btn-ghost btn-sm gap-2 text-base-content/60 hover:text-base-content">
           <ArrowLeft size={16} /> Proiecte
@@ -210,6 +267,19 @@ export default function ProjectDetailPage() {
                           onChange={(e) => setEditData({ ...editData, venue: e.target.value })} 
                         />
                     </div>
+                </div>
+                <div className="form-control">
+                    <label className="label"><span className="label-text font-bold">Suffix Email Waitwhile</span></label>
+                    <input 
+                      type="text" 
+                      placeholder="@dgpt.ro"
+                      className="input input-bordered w-full" 
+                      value={editData.waitwhileEmailDomainSuffix || ''} 
+                      onChange={(e) => setEditData({ ...editData, waitwhileEmailDomainSuffix: e.target.value })} 
+                    />
+                    <label className="label">
+                      <span className="label-text-alt text-base-content/50">Folosit pentru generarea conturilor de voluntari (ex: @dgpt-cj.ro)</span>
+                    </label>
                 </div>
             </div>
         ) : (
@@ -316,6 +386,26 @@ export default function ProjectDetailPage() {
                         )}
                       </>
                     )}
+                  </div>
+                </div>
+
+                <div className="bg-accent/5 rounded-2xl p-6 border border-accent/10 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+                        <Users size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base-content">Registru Voluntari</h3>
+                        <p className="text-xs text-base-content/50">Import, CRUD și sincronizare Waitwhile</p>
+                      </div>
+                    </div>
+                    <Link 
+                      href={`/projects/${project.$id}/volunteers`}
+                      className="btn btn-accent btn-sm gap-2"
+                    >
+                      Gestionează Voluntari
+                    </Link>
                   </div>
                 </div>
             </>

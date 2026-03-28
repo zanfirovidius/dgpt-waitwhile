@@ -6,12 +6,29 @@ import { createAdminClient, createSessionClient } from '../../lib/appwrite-serve
 import { normalizeProjectDates } from '@/lib/project-dates';
 import { normalizeToSlug, ensureUniqueProjectSlug } from '@/lib/slug';
 import { getPlatformSettings } from './platform';
+import {
+  deleteProjectVolunteerSettings,
+  resolveProjectWaitwhileEmailDomainSuffix,
+  upsertProjectVolunteerSettings,
+} from './project-volunteer-settings';
 import { validateProjectFeedbackSetup, validateProjectAttendanceSetup } from '@/lib/setup-validation';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 const PROJECTS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!;
 const FEEDBACK_CONFIG_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_FEEDBACK_CONFIG_COLLECTION_ID!;
 const ATTENDANCE_CONFIG_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ATTENDANCE_CONFIG_COLLECTION_ID || 'project_attendance_config';
+
+type AppwriteLikeError = {
+  code?: number;
+  message?: string;
+};
+
+type ProjectDocument = Project & {
+  $updatedAt?: string;
+  $permissions?: string[];
+  $databaseId?: string;
+  $collectionId?: string;
+};
 
 export interface Project {
   $id: string;
@@ -27,6 +44,7 @@ export interface Project {
   eventName?: string;
   city?: string;
   venue?: string;
+  waitwhileEmailDomainSuffix?: string;
   [key: string]: unknown;
 }
 
@@ -123,13 +141,28 @@ export async function createProject(data: {
       setupMissingItemsJson: JSON.stringify(attValidation.missingItems),
     });
 
+    const volunteerSettingsRes = await upsertProjectVolunteerSettings(
+      projectId,
+      {
+        waitwhileEmailDomainSuffix: defaults?.defaultWaitwhileEmailDomainSuffix || '@dgpt.ro',
+      },
+      { useAdmin: true },
+    );
+
+    if (!volunteerSettingsRes.success) {
+      console.warn('[Projects] volunteer settings seed warning:', volunteerSettingsRes.error);
+    }
+
     return { success: true, projectId };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Projects] createProject error:', err);
-    if (err?.code === 401 || err?.code === 403) {
+    const errorCode = getErrorCode(err);
+
+    if (errorCode === 401 || errorCode === 403) {
       return { success: false, error: 'Unauthorized: You must be an admin to create projects.' };
     }
-    return { success: false, error: err instanceof Error ? err.message : 'Failed to create project' };
+
+    return { success: false, error: getErrorMessage(err, 'Failed to create project') };
   }
 }
 
@@ -141,8 +174,8 @@ export async function getProjects(): Promise<{ success: boolean; data?: Project[
     ]);
     
     // Explicitly map to POJO to avoid serialization errors with Appwrite Document objects
-    const data = res.documents.map((doc) => {
-      const normalized = normalizeProjectDates(doc as any);
+    const data = await Promise.all(res.documents.map(async (doc) => {
+      const normalized = normalizeProjectDates(doc as ProjectDocument);
       return {
         $id: normalized.$id,
         $createdAt: normalized.$createdAt,
@@ -157,16 +190,23 @@ export async function getProjects(): Promise<{ success: boolean; data?: Project[
         eventName: normalized.eventName,
         city: normalized.city,
         venue: normalized.venue,
+        waitwhileEmailDomainSuffix: await resolveProjectWaitwhileEmailDomainSuffix(
+          normalized.$id,
+          normalized.waitwhileEmailDomainSuffix,
+        ),
       } as Project;
-    });
+    }));
 
     return { success: true, data };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Projects] getProjects error:', err);
-    if (err?.code === 401 || err?.code === 403) {
+    const errorCode = getErrorCode(err);
+
+    if (errorCode === 401 || errorCode === 403) {
       return { success: false, error: 'Unauthorized: Please log in as an administrator.' };
     }
-    return { success: false, error: err instanceof Error ? err.message : 'Failed to fetch projects' };
+
+    return { success: false, error: getErrorMessage(err, 'Failed to fetch projects') };
   }
 }
 
@@ -176,7 +216,7 @@ export async function getProject(id: string): Promise<{ success: boolean; data?:
     const doc = await databases.getDocument(DATABASE_ID, PROJECTS_COLLECTION_ID, id);
     
     // Explicitly map to POJO
-    const normalized = normalizeProjectDates(doc as any);
+    const normalized = normalizeProjectDates(doc as ProjectDocument);
     const data: Project = {
       $id: normalized.$id,
       $createdAt: normalized.$createdAt,
@@ -191,10 +231,14 @@ export async function getProject(id: string): Promise<{ success: boolean; data?:
       eventName: normalized.eventName,
       city: normalized.city,
       venue: normalized.venue,
+      waitwhileEmailDomainSuffix: await resolveProjectWaitwhileEmailDomainSuffix(
+        normalized.$id,
+        normalized.waitwhileEmailDomainSuffix,
+      ),
     };
 
     return { success: true, data };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Projects] getProject error:', err);
     return { success: false, error: 'Project not found' };
   }
@@ -209,13 +253,44 @@ export async function updateProject(id: string, data: Partial<Project>): Promise
     await ensureProjectMetadataAttributes(admin.databases);
 
     // 2. Perform update
-    const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, ...cleanData } = data as any;
-    
-    await databases.updateDocument(DATABASE_ID, PROJECTS_COLLECTION_ID, id, cleanData);
+    const cleanData: Record<string, unknown> = { ...data };
+    const waitwhileEmailDomainSuffix = data.waitwhileEmailDomainSuffix;
+
+    delete cleanData.$id;
+    delete cleanData.$createdAt;
+    delete cleanData.waitwhileEmailDomainSuffix;
+    delete cleanData.$updatedAt;
+    delete cleanData.$permissions;
+    delete cleanData.$databaseId;
+    delete cleanData.$collectionId;
+
+    if (waitwhileEmailDomainSuffix !== undefined) {
+      const currentProject = await getProject(id);
+      const settingsRes = await upsertProjectVolunteerSettings(
+        id,
+        { waitwhileEmailDomainSuffix },
+        {
+          legacySuffix: currentProject.success ? currentProject.data?.waitwhileEmailDomainSuffix : undefined,
+        },
+      );
+
+      if (!settingsRes.success) {
+        throw new Error(settingsRes.error || 'Failed to update project volunteer settings');
+      }
+    }
+
+    if (cleanData.startDate !== undefined) {
+      cleanData.date = cleanData.startDate;
+    }
+
+    if (Object.keys(cleanData).length > 0) {
+      await databases.updateDocument(DATABASE_ID, PROJECTS_COLLECTION_ID, id, cleanData);
+    }
+
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Projects] update error:', err);
-    return { success: false, error: err.message || 'Failed to update project' };
+    return { success: false, error: getErrorMessage(err, 'Failed to update project') };
   }
 }
 
@@ -226,24 +301,29 @@ export async function deleteProject(id: string): Promise<{ success: boolean; err
     // 1. Delete associated configuration
     try {
         await databases.deleteDocument(DATABASE_ID, FEEDBACK_CONFIG_COLLECTION_ID, id);
-    } catch (e) {
+    } catch {
         // Silently skip if config doesn't exist
     }
 
     // 1b. Delete associated attendance configuration
     try {
         await databases.deleteDocument(DATABASE_ID, ATTENDANCE_CONFIG_COLLECTION_ID, id);
-    } catch (e) {
+    } catch {
         // Silently skip if config doesn't exist
+    }
+
+    const volunteerSettingsDeleteRes = await deleteProjectVolunteerSettings(id);
+    if (!volunteerSettingsDeleteRes.success) {
+        console.warn('[Projects] volunteer settings delete warning:', volunteerSettingsDeleteRes.error);
     }
 
     // 2. Delete the project itself
     await databases.deleteDocument(DATABASE_ID, PROJECTS_COLLECTION_ID, id);
     
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Projects] delete error:', err);
-    return { success: false, error: err.message || 'Failed to delete project' };
+    return { success: false, error: getErrorMessage(err, 'Failed to delete project') };
   }
 }
 
@@ -251,7 +331,9 @@ export async function deleteProject(id: string): Promise<{ success: boolean; err
  * Publicly fetches project and its feedback configuration by slug.
  * Uses createAdminClient.
  */
-export async function getProjectBySlug(slug: string): Promise<{ success: boolean; data?: { project: Project; config: any }; error?: string }> {
+export async function getProjectBySlug(
+  slug: string,
+): Promise<{ success: boolean; data?: { project: Project; config: Record<string, unknown> }; error?: string }> {
   try {
     const { databases } = await createAdminClient();
     
@@ -263,7 +345,7 @@ export async function getProjectBySlug(slug: string): Promise<{ success: boolean
     
     if (projRes.total === 0) return { success: false, error: 'Project not found' };
     const projectDoc = projRes.documents[0];
-    const normalized = normalizeProjectDates(projectDoc as any);
+    const normalized = normalizeProjectDates(projectDoc as ProjectDocument);
     const project: Project = {
         $id: normalized.$id,
         $createdAt: normalized.$createdAt,
@@ -278,6 +360,11 @@ export async function getProjectBySlug(slug: string): Promise<{ success: boolean
         eventName: normalized.eventName,
         city: normalized.city,
         venue: normalized.venue,
+        waitwhileEmailDomainSuffix: await resolveProjectWaitwhileEmailDomainSuffix(
+          normalized.$id,
+          normalized.waitwhileEmailDomainSuffix,
+          { useAdmin: true },
+        ),
     };
 
     // 2. Get Config
@@ -287,13 +374,13 @@ export async function getProjectBySlug(slug: string): Promise<{ success: boolean
     ]);
 
     if (confRes.total === 0) return { success: false, error: 'Configuration not found' };
-    const config = JSON.parse(JSON.stringify(confRes.documents[0]));
+    const config = JSON.parse(JSON.stringify(confRes.documents[0])) as Record<string, unknown>;
 
-    return { 
-        success: true, 
-        data: { project, config } 
+    return {
+        success: true,
+        data: { project, config }
     };
-  } catch (err) {
+  } catch (err: unknown) {
     console.error('[Projects] getBySlug error:', err);
     return { success: false, error: 'Failed to fetch project details' };
   }
@@ -346,4 +433,24 @@ async function waitForAttributeAvailability(
   }
 
   throw new Error(`Project attribute "${key}" is still processing`);
+}
+
+function getErrorCode(error: unknown) {
+  return toAppwriteLikeError(error).code;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return toAppwriteLikeError(error).message || fallback;
+}
+
+function toAppwriteLikeError(error: unknown): AppwriteLikeError {
+  if (error instanceof Error) {
+    return error as AppwriteLikeError;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    return error as AppwriteLikeError;
+  }
+
+  return { message: undefined };
 }

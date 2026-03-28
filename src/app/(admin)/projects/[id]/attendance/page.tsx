@@ -2,16 +2,17 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
+import Image from 'next/image';
 import { getProject } from '@/app/actions/projects';
 import { getProjectAttendanceConfig, updateProjectAttendanceConfig, AttendanceConfig } from '@/app/actions/attendance-config';
-import { getProjectAttendanceEntries, validateAttendanceEntry, AttendanceEntry } from '@/app/actions/attendance';
+import { getProjectAttendanceEntries, validateAttendanceEntry, deleteAttendanceEntry, AttendanceEntry } from '@/app/actions/attendance';
 import { 
-  Users, Clock, CheckCircle, AlertCircle, 
+  Users, Clock, AlertCircle, 
   Settings, ClipboardList, Search, Filter,
   Download, FileSpreadsheet, FileText,
-  Save, Eye, CheckCircle2, XCircle,
-  Calendar, Info, ShieldCheck, RefreshCw, 
-  ExternalLink, ChevronRight, ArrowLeft,
+  Save, Eye, CheckCircle2, XCircle, Trash2,
+  Info, ShieldCheck, RefreshCw, Mail, Phone,
+  ExternalLink,
   Signature as SignatureIcon
 } from 'lucide-react';
 import Link from 'next/link';
@@ -24,6 +25,18 @@ import autoTable from 'jspdf-autotable';
 
 type Tab = 'records' | 'config';
 
+function getSignaturePreviewSrc(signatureImageId?: string) {
+    if (!signatureImageId) {
+        return null;
+    }
+
+    if (signatureImageId.startsWith('data:')) {
+        return signatureImageId;
+    }
+
+    return `/api/attendance-signatures/${encodeURIComponent(signatureImageId)}`;
+}
+
 export default function AdminAttendancePage() {
     const params = useParams();
     const projectId = params.id as string;
@@ -35,7 +48,11 @@ export default function AdminAttendancePage() {
     const [entries, setEntries] = useState<AttendanceEntry[]>([]);
     
     const [searchQuery, setSearchQuery] = useState('');
+    const [showOnlyOverTwoHours, setShowOnlyOverTwoHours] = useState(false);
     const [isSavingConfig, setIsSavingConfig] = useState(false);
+    const [isBulkValidating, setIsBulkValidating] = useState(false);
+    const [validatingEntryId, setValidatingEntryId] = useState<string | null>(null);
+    const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [newRole, setNewRole] = useState('');
 
@@ -67,11 +84,35 @@ export default function AdminAttendancePage() {
     }, [projectId]);
 
     const filteredEntries = useMemo(() => {
-        return entries.filter(e => 
-            e.volunteerFullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            e.departmentRole.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-    }, [entries, searchQuery]);
+        return entries.filter((entry) => {
+            const matchesSearch =
+                entry.volunteerFullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                entry.departmentRole.toLowerCase().includes(searchQuery.toLowerCase());
+
+            if (!matchesSearch) {
+                return false;
+            }
+
+            if (showOnlyOverTwoHours) {
+                return (entry.totalHoursDecimal || 0) > 2;
+            }
+
+            return true;
+        });
+    }, [entries, searchQuery, showOnlyOverTwoHours]);
+
+    const bulkValidatableEntries = useMemo(
+        () =>
+            filteredEntries.filter(
+                (entry) =>
+                    !!entry.$id &&
+                    entry.checkOutConfirmed &&
+                    !entry.coordinatorValidated &&
+                    (entry.totalHoursDecimal || 0) > 2,
+            ),
+        [filteredEntries],
+    );
+    const selectedEntrySignatureSrc = getSignaturePreviewSrc(selectedEntry?.signatureImageId);
 
     const stats = useMemo(() => {
         const totalHours = entries.reduce((acc, curr) => acc + (curr.totalHoursDecimal || 0), 0);
@@ -92,7 +133,7 @@ export default function AdminAttendancePage() {
             } else {
                 setMessage({ type: 'error', text: res.error || 'Eroare la salvare' });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Eroare de sistem' });
         } finally {
             setIsSavingConfig(false);
@@ -100,16 +141,129 @@ export default function AdminAttendancePage() {
     };
 
     const handleToggleValidation = async (entry: AttendanceEntry) => {
+        if (!entry.checkOutConfirmed && !entry.coordinatorValidated) {
+            setMessage({ type: 'error', text: 'Rândul poate fi validat doar după check-out.' });
+            return;
+        }
+
+        setValidatingEntryId(entry.$id || null);
+        setMessage(null);
+
         try {
             const res = await validateAttendanceEntry(entry.$id!, !entry.coordinatorValidated);
-            if (res.success) {
-                loadData(); // Refresh
-                if (selectedEntry?.$id === entry.$id) {
-                    setSelectedEntry({ ...entry, coordinatorValidated: !entry.coordinatorValidated });
-                }
+            if (!res.success) {
+                setMessage({ type: 'error', text: res.error || 'Eroare la validarea rândului' });
+                return;
             }
-        } catch (err) {
+
+            if (res.data) {
+                setEntries(prev => prev.map(item => item.$id === res.data!.$id ? res.data! : item));
+                setSelectedEntry(prev => prev?.$id === res.data!.$id ? res.data! : prev);
+            } else {
+                await loadData();
+            }
+
+            setMessage({
+                type: 'success',
+                text: entry.coordinatorValidated ? 'Validarea a fost anulată.' : 'Rândul a fost validat.',
+            });
+        } catch (err: unknown) {
             console.error('Validation error:', err);
+            setMessage({
+                type: 'error',
+                text: err instanceof Error ? err.message : 'Eroare la validarea rândului',
+            });
+        } finally {
+            setValidatingEntryId(null);
+        }
+    };
+
+    const handleBulkValidate = async () => {
+        if (bulkValidatableEntries.length === 0) {
+            setMessage({
+                type: 'error',
+                text: 'Nu există rânduri eligibile pentru validare în filtrul curent.',
+            });
+            return;
+        }
+
+        setIsBulkValidating(true);
+        setMessage(null);
+
+        try {
+            const results = await Promise.all(
+                bulkValidatableEntries.map((entry) => validateAttendanceEntry(entry.$id!, true)),
+            );
+
+            const successfulUpdates = results
+                .filter((result): result is { success: true; data?: AttendanceEntry; error?: string } => result.success)
+                .map((result) => result.data)
+                .filter((entry): entry is AttendanceEntry => !!entry?.$id);
+
+            const failures = results.filter((result) => !result.success);
+
+            if (successfulUpdates.length > 0) {
+                const updatedById = new Map(successfulUpdates.map((entry) => [entry.$id!, entry]));
+                setEntries((prev) => prev.map((entry) => updatedById.get(entry.$id || '') || entry));
+                setSelectedEntry((prev) => (prev ? updatedById.get(prev.$id || '') || prev : prev));
+            }
+
+            if (failures.length === 0) {
+                setMessage({
+                    type: 'success',
+                    text: `Au fost validate ${successfulUpdates.length} înregistrări cu peste 2 ore.`,
+                });
+                return;
+            }
+
+            setMessage({
+                type: 'error',
+                text: `Au fost validate ${successfulUpdates.length} înregistrări, dar ${failures.length} au eșuat.`,
+            });
+        } catch (err: unknown) {
+            console.error('Bulk validation error:', err);
+            setMessage({
+                type: 'error',
+                text: err instanceof Error ? err.message : 'Eroare la validarea în masă.',
+            });
+        } finally {
+            setIsBulkValidating(false);
+        }
+    };
+
+    const handleDeleteEntry = async (entry: AttendanceEntry) => {
+        if (!entry.$id) {
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `Ștergi definitiv prezența pentru ${entry.volunteerFullName} din ${entry.attendanceDate}?`,
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        setDeletingEntryId(entry.$id);
+        setMessage(null);
+
+        try {
+            const res = await deleteAttendanceEntry(entry.$id);
+            if (!res.success) {
+                setMessage({ type: 'error', text: res.error || 'Eroare la ștergerea înregistrării' });
+                return;
+            }
+
+            setEntries((prev) => prev.filter((item) => item.$id !== entry.$id));
+            setSelectedEntry((prev) => (prev?.$id === entry.$id ? null : prev));
+            setMessage({ type: 'success', text: 'Înregistrarea de prezență a fost ștearsă.' });
+        } catch (err: unknown) {
+            console.error('Delete attendance error:', err);
+            setMessage({
+                type: 'error',
+                text: err instanceof Error ? err.message : 'Eroare la ștergerea înregistrării',
+            });
+        } finally {
+            setDeletingEntryId(null);
         }
     };
 
@@ -305,8 +459,9 @@ export default function AdminAttendancePage() {
                 
                 {activeTab === 'records' && (
                     <div className="animate-in fade-in duration-300 space-y-6">
-                        <div className="flex justify-end">
-                            <div className="join w-full md:w-auto">
+                        <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                <div className="join w-full lg:w-auto">
                                 <div className="input input-bordered join-item flex items-center gap-2 bg-base-100 rounded-l-2xl border-r-0 h-10">
                                     <Search size={16} className="opacity-40" />
                                     <input 
@@ -317,10 +472,46 @@ export default function AdminAttendancePage() {
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                     />
                                 </div>
-                                <button className="btn btn-outline border-base-300 join-item rounded-r-2xl gap-2 font-bold h-10 min-h-[40px]">
-                                    <Filter size={16} /> Filtrează
+                                <button
+                                    className={`btn join-item rounded-r-2xl gap-2 font-bold h-10 min-h-[40px] ${
+                                        showOnlyOverTwoHours ? 'btn-primary' : 'btn-outline border-base-300'
+                                    }`}
+                                    onClick={() => setShowOnlyOverTwoHours((prev) => !prev)}
+                                >
+                                    <Filter size={16} /> {showOnlyOverTwoHours ? 'Peste 2h' : 'Toate orele'}
                                 </button>
                             </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="badge badge-outline badge-lg rounded-xl px-4">
+                                        Vizibile: {filteredEntries.length}
+                                    </div>
+                                    {showOnlyOverTwoHours && (
+                                        <div className="badge badge-warning badge-lg rounded-xl px-4 border-none">
+                                            Doar peste 2h
+                                        </div>
+                                    )}
+                                    <button
+                                        className="btn btn-primary btn-sm gap-2 rounded-xl shadow-lg shadow-primary/20"
+                                        onClick={handleBulkValidate}
+                                        disabled={bulkValidatableEntries.length === 0 || isBulkValidating}
+                                    >
+                                        {isBulkValidating ? (
+                                            <span className="loading loading-spinner loading-sm"></span>
+                                        ) : (
+                                            <CheckCircle2 size={14} />
+                                        )}
+                                        Validează în masă ({bulkValidatableEntries.length})
+                                    </button>
+                                </div>
+                            </div>
+                            {showOnlyOverTwoHours && (
+                                <div className="alert alert-info rounded-2xl text-sm">
+                                    <Clock size={16} />
+                                    <span>
+                                        Sunt afișate doar prezențele cu mai mult de 2 ore. Butonul de validare în masă validează doar rândurile nevalidate și cu check-out confirmat.
+                                    </span>
+                                </div>
+                            )}
                         </div>
 
                         <div className="bg-base-100 rounded-2xl border border-base-200 overflow-hidden">
@@ -335,16 +526,20 @@ export default function AdminAttendancePage() {
                                             <th className="font-bold text-center">Pauză</th>
                                             <th className="font-bold text-center text-primary">Total Ore</th>
                                             <th className="font-bold text-center">Status</th>
+                                            <th className="font-bold text-center">Semnătură</th>
                                             <th className=""></th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-base-100">
                                         {filteredEntries.length === 0 ? (
                                             <tr>
-                                                <td colSpan={8} className="text-center py-12 opacity-40">Nu există înregistrări care să corespundă criteriilor.</td>
+                                                <td colSpan={9} className="text-center py-12 opacity-40">Nu există înregistrări care să corespundă criteriilor.</td>
                                             </tr>
                                         ) : (
-                                            filteredEntries.map(entry => (
+                                            filteredEntries.map(entry => {
+                                                const signaturePreviewSrc = getSignaturePreviewSrc(entry.signatureImageId);
+
+                                                return (
                                                 <tr key={entry.$id} className="hover:bg-base-200/20 transition-colors">
                                                     <td>
                                                         <div className="flex items-center gap-3">
@@ -383,16 +578,72 @@ export default function AdminAttendancePage() {
                                                             )
                                                         )}
                                                     </td>
+                                                    <td className="text-center">
+                                                        {signaturePreviewSrc ? (
+                                                            <button
+                                                                className="btn btn-ghost h-auto min-h-0 rounded-2xl p-1 hover:bg-base-200/70"
+                                                                onClick={() => setSelectedEntry(entry)}
+                                                                title="Vezi semnătura"
+                                                            >
+                                                                <div className="overflow-hidden rounded-xl border border-base-300 bg-white shadow-sm">
+                                                                    <Image
+                                                                        src={signaturePreviewSrc}
+                                                                        alt={`Semnatura ${entry.volunteerFullName}`}
+                                                                        width={88}
+                                                                        height={40}
+                                                                        unoptimized
+                                                                        className="h-10 w-[88px] object-contain"
+                                                                    />
+                                                                </div>
+                                                            </button>
+                                                        ) : (
+                                                            <span className="text-xs opacity-30">-</span>
+                                                        )}
+                                                    </td>
                                                     <td className="text-right">
-                                                        <button 
-                                                            className="btn btn-ghost btn-circle btn-sm"
-                                                            onClick={() => setSelectedEntry(entry)}
-                                                        >
-                                                            <Eye size={18} />
-                                                        </button>
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            {entry.checkOutConfirmed && (
+                                                                <button
+                                                                    className={`btn btn-xs rounded-xl ${entry.coordinatorValidated ? 'btn-outline btn-error' : 'btn-primary'}`}
+                                                                    onClick={() => handleToggleValidation(entry)}
+                                                                    disabled={
+                                                                        validatingEntryId === entry.$id ||
+                                                                        deletingEntryId === entry.$id ||
+                                                                        isBulkValidating
+                                                                    }
+                                                                >
+                                                                    {validatingEntryId === entry.$id ? (
+                                                                        <span className="loading loading-spinner loading-xs"></span>
+                                                                    ) : entry.coordinatorValidated ? (
+                                                                        'Anulează'
+                                                                    ) : (
+                                                                        'Validează'
+                                                                    )}
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                className="btn btn-ghost btn-circle btn-sm text-error hover:bg-error/10"
+                                                                onClick={() => handleDeleteEntry(entry)}
+                                                                disabled={deletingEntryId === entry.$id || validatingEntryId === entry.$id}
+                                                                title="Șterge înregistrarea"
+                                                            >
+                                                                {deletingEntryId === entry.$id ? (
+                                                                    <span className="loading loading-spinner loading-xs"></span>
+                                                                ) : (
+                                                                    <Trash2 size={16} />
+                                                                )}
+                                                            </button>
+                                                            <button 
+                                                                className="btn btn-ghost btn-circle btn-sm"
+                                                                onClick={() => setSelectedEntry(entry)}
+                                                            >
+                                                                <Eye size={18} />
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
-                                            ))
+                                                );
+                                            })
                                         )}
                                     </tbody>
                                 </table>
@@ -645,11 +896,39 @@ export default function AdminAttendancePage() {
                                 </div>
                             </div>
 
-                            {selectedEntry.signatureImageId && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-base-200/50 p-4 rounded-2xl border border-base-200/70">
+                                    <p className="text-[10px] font-black uppercase opacity-40 mb-3">Contact Telefon</p>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-base-100 border border-base-200 flex items-center justify-center text-base-content/50">
+                                            <Phone size={16} />
+                                        </div>
+                                        <p className="font-bold break-all">{selectedEntry.volunteerPhone || '-'}</p>
+                                    </div>
+                                </div>
+                                <div className="bg-base-200/50 p-4 rounded-2xl border border-base-200/70">
+                                    <p className="text-[10px] font-black uppercase opacity-40 mb-3">Contact Email</p>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-base-100 border border-base-200 flex items-center justify-center text-base-content/50">
+                                            <Mail size={16} />
+                                        </div>
+                                        <p className="font-bold break-all">{selectedEntry.volunteerEmail || '-'}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {selectedEntrySignatureSrc && (
                                 <div className="space-y-4">
                                     <h4 className="font-bold flex items-center gap-2"><SignatureIcon size={18} /> Semnătură Digitală (Client)</h4>
                                     <div className="bg-white border border-base-200 rounded-2xl p-4 flex items-center justify-center min-h-32">
-                                        <img src={selectedEntry.signatureImageId} alt="Semnatura" className="max-h-32 object-contain" />
+                                        <Image
+                                            src={selectedEntrySignatureSrc}
+                                            alt="Semnatura"
+                                            width={320}
+                                            height={128}
+                                            unoptimized
+                                            className="max-h-32 w-auto object-contain"
+                                        />
                                     </div>
                                 </div>
                             )}
@@ -673,7 +952,7 @@ export default function AdminAttendancePage() {
                                                 <p className="text-[10px] opacity-70">{selectedEntry.coordinatorValidatedAt ? format(new Date(selectedEntry.coordinatorValidatedAt), 'PPp', { locale: ro }) : ''}</p>
                                             </div>
                                         </div>
-                                    ) : (
+                                    ) : selectedEntry.checkOutConfirmed ? (
                                         <div className="bg-warning/10 text-warning p-4 rounded-2xl flex-1 flex items-center gap-3">
                                             <AlertCircle size={24} />
                                             <div>
@@ -681,14 +960,45 @@ export default function AdminAttendancePage() {
                                                 <p className="text-[10px] opacity-70">Verifică corectitudinea orelor și semnătura.</p>
                                             </div>
                                         </div>
+                                    ) : (
+                                        <div className="bg-base-200/80 text-base-content/60 p-4 rounded-2xl flex-1 flex items-center gap-3">
+                                            <Clock size={24} />
+                                            <div>
+                                                <p className="text-xs font-black uppercase">Check-Out Neconfirmat</p>
+                                                <p className="text-[10px] opacity-70">Validarea devine disponibilă după închiderea turei.</p>
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
                                 <div className="flex gap-2">
+                                    <button
+                                        className="btn btn-outline btn-error rounded-2xl px-6 font-bold"
+                                        onClick={() => handleDeleteEntry(selectedEntry)}
+                                        disabled={deletingEntryId === selectedEntry.$id || validatingEntryId === selectedEntry.$id || isBulkValidating}
+                                    >
+                                        {deletingEntryId === selectedEntry.$id ? (
+                                            <span className="loading loading-spinner loading-sm"></span>
+                                        ) : (
+                                            <><Trash2 size={18} className="mr-2" /> Șterge</>
+                                        )}
+                                    </button>
                                     <button 
                                         className={`btn btn-lg rounded-2xl px-8 font-bold ${selectedEntry.coordinatorValidated ? 'btn-outline btn-error' : 'btn-primary shadow-lg shadow-primary/20'}`}
                                         onClick={() => handleToggleValidation(selectedEntry)}
+                                        disabled={
+                                            isBulkValidating ||
+                                            deletingEntryId === selectedEntry.$id ||
+                                            validatingEntryId === selectedEntry.$id ||
+                                            (!selectedEntry.checkOutConfirmed && !selectedEntry.coordinatorValidated)
+                                        }
                                     >
-                                        {selectedEntry.coordinatorValidated ? <><XCircle size={20} className="mr-2" /> Anulează Validarea</> : <><CheckCircle2 size={20} className="mr-2" /> Validează Rând</>}
+                                        {validatingEntryId === selectedEntry.$id ? (
+                                            <span className="loading loading-spinner loading-sm"></span>
+                                        ) : selectedEntry.coordinatorValidated ? (
+                                            <><XCircle size={20} className="mr-2" /> Anulează Validarea</>
+                                        ) : (
+                                            <><CheckCircle2 size={20} className="mr-2" /> Validează Rând</>
+                                        )}
                                     </button>
                                 </div>
                             </div>
@@ -700,9 +1010,3 @@ export default function AdminAttendancePage() {
         </div>
     );
 }
-
-const CircleCheck = ({ size, className }: { size?: number, className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size || 24} height={size || 24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
-    </svg>
-);
