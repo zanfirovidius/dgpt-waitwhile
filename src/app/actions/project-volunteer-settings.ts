@@ -8,6 +8,9 @@ const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 const ADMIN_TEAM_ID = process.env.NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID!;
 const PROJECT_VOLUNTEER_SETTINGS_COLLECTION_ID =
   process.env.NEXT_PUBLIC_APPWRITE_PROJECT_VOLUNTEER_SETTINGS_COLLECTION_ID || 'project_volunteer_settings';
+const ATTENDANCE_CONFIG_COLLECTION_ID =
+  process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ATTENDANCE_CONFIG_COLLECTION_ID || 'project_attendance_config';
+const DEFAULT_VOLUNTEER_ROLES = ['VOLUNTAR'];
 
 type DatabasesClient = Awaited<ReturnType<typeof createAdminClient>>['databases'];
 type AppwriteLikeError = {
@@ -19,6 +22,7 @@ export interface ProjectVolunteerSettings {
   $id?: string;
   projectId: string;
   waitwhileEmailDomainSuffix: string;
+  volunteerRoles: string[];
 }
 
 function normalizeWaitwhileEmailDomainSuffix(value?: string | null, fallback = '@dgpt.ro') {
@@ -28,13 +32,46 @@ function normalizeWaitwhileEmailDomainSuffix(value?: string | null, fallback = '
   return normalized.startsWith('@') ? normalized : `@${normalized}`;
 }
 
+function normalizeVolunteerRoles(value?: string[] | null, fallback: string[] = DEFAULT_VOLUNTEER_ROLES) {
+  const normalized = Array.isArray(value)
+    ? Array.from(
+        new Set(
+          value
+            .map((role) => role.trim().toUpperCase())
+            .filter(Boolean),
+        ),
+      )
+    : [];
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const fallbackNormalized = Array.isArray(fallback)
+    ? Array.from(
+        new Set(
+          fallback
+            .map((role) => role.trim().toUpperCase())
+            .filter(Boolean),
+        ),
+      )
+    : [];
+
+  return fallbackNormalized.length > 0 ? fallbackNormalized : [...DEFAULT_VOLUNTEER_ROLES];
+}
+
 export async function getProjectVolunteerSettings(
   projectId: string,
-  options: { legacySuffix?: string; useAdmin?: boolean } = {},
+  options: { legacySuffix?: string; legacyRoles?: string[]; useAdmin?: boolean } = {},
 ): Promise<{ success: boolean; data?: ProjectVolunteerSettings; error?: string }> {
   try {
     const databases = await getDatabasesClient(options.useAdmin);
     const fallbackSuffix = await resolveFallbackSuffix(options.legacySuffix);
+    const fallbackRoles = await resolveFallbackVolunteerRoles(
+      databases,
+      projectId,
+      options.legacyRoles,
+    );
     const existing = await readProjectVolunteerSettingsDocument(databases, projectId);
 
     if (!existing) {
@@ -44,6 +81,7 @@ export async function getProjectVolunteerSettings(
           $id: projectId,
           projectId,
           waitwhileEmailDomainSuffix: fallbackSuffix,
+          volunteerRoles: fallbackRoles,
         },
       };
     }
@@ -56,6 +94,7 @@ export async function getProjectVolunteerSettings(
           existing.waitwhileEmailDomainSuffix,
           fallbackSuffix,
         ),
+        volunteerRoles: normalizeVolunteerRoles(existing.volunteerRoles, fallbackRoles),
       },
     };
   } catch (err: unknown) {
@@ -84,10 +123,28 @@ export async function resolveProjectWaitwhileEmailDomainSuffix(
   return resolveFallbackSuffix(legacySuffix);
 }
 
+export async function resolveProjectVolunteerRoles(
+  projectId: string,
+  legacyRoles?: string[],
+  options: { useAdmin?: boolean } = {},
+) {
+  const res = await getProjectVolunteerSettings(projectId, {
+    legacyRoles,
+    useAdmin: options.useAdmin,
+  });
+
+  if (res.success && res.data) {
+    return res.data.volunteerRoles;
+  }
+
+  const databases = await getDatabasesClient(options.useAdmin);
+  return resolveFallbackVolunteerRoles(databases, projectId, legacyRoles);
+}
+
 export async function upsertProjectVolunteerSettings(
   projectId: string,
   data: Partial<ProjectVolunteerSettings>,
-  options: { legacySuffix?: string; useAdmin?: boolean } = {},
+  options: { legacySuffix?: string; legacyRoles?: string[]; useAdmin?: boolean } = {},
 ): Promise<{ success: boolean; data?: ProjectVolunteerSettings; error?: string }> {
   try {
     const { databases: adminDatabases } = await createAdminClient();
@@ -98,6 +155,11 @@ export async function upsertProjectVolunteerSettings(
       : (await createSessionClient()).databases;
 
     const fallbackSuffix = await resolveFallbackSuffix(options.legacySuffix);
+    const fallbackRoles = await resolveFallbackVolunteerRoles(
+      adminDatabases,
+      projectId,
+      options.legacyRoles,
+    );
     const waitwhileEmailDomainSuffix = normalizeWaitwhileEmailDomainSuffix(
       data.waitwhileEmailDomainSuffix,
       fallbackSuffix,
@@ -105,6 +167,7 @@ export async function upsertProjectVolunteerSettings(
     const payload: ProjectVolunteerSettings = {
       projectId,
       waitwhileEmailDomainSuffix,
+      volunteerRoles: normalizeVolunteerRoles(data.volunteerRoles, fallbackRoles),
     };
     const existing = await readProjectVolunteerSettingsDocument(databases, projectId);
 
@@ -185,12 +248,13 @@ async function ensureProjectVolunteerSettingsCollection(databases: DatabasesClie
 
   const attributes = await databases.listAttributes(DATABASE_ID, PROJECT_VOLUNTEER_SETTINGS_COLLECTION_ID);
   const existing = new Map(attributes.attributes.map((attribute) => [attribute.key, attribute]));
-  const requiredAttributes = [
+  const requiredStringAttributes = [
     { key: 'projectId', size: 128 },
     { key: 'waitwhileEmailDomainSuffix', size: 255 },
   ];
+  const requiredStringArrayAttributes = [{ key: 'volunteerRoles', size: 128 }];
 
-  for (const attribute of requiredAttributes) {
+  for (const attribute of requiredStringAttributes) {
     if (existing.has(attribute.key)) {
       continue;
     }
@@ -204,8 +268,24 @@ async function ensureProjectVolunteerSettingsCollection(databases: DatabasesClie
     );
   }
 
+  for (const attribute of requiredStringArrayAttributes) {
+    if (existing.has(attribute.key)) {
+      continue;
+    }
+
+    await databases.createStringAttribute(
+      DATABASE_ID,
+      PROJECT_VOLUNTEER_SETTINGS_COLLECTION_ID,
+      attribute.key,
+      attribute.size,
+      false,
+      undefined,
+      true,
+    );
+  }
+
   await Promise.all(
-    requiredAttributes.map(async ({ key }) => {
+    [...requiredStringAttributes, ...requiredStringArrayAttributes].map(async ({ key }) => {
       if (existing.get(key)?.status === 'available') {
         return;
       }
@@ -245,12 +325,46 @@ async function resolveFallbackSuffix(legacySuffix?: string) {
   return normalizeWaitwhileEmailDomainSuffix(settingsRes.data?.defaultWaitwhileEmailDomainSuffix);
 }
 
+async function resolveFallbackVolunteerRoles(
+  databases: DatabasesClient,
+  projectId: string,
+  legacyRoles?: string[],
+) {
+  if (Array.isArray(legacyRoles) && legacyRoles.length > 0) {
+    return normalizeVolunteerRoles(legacyRoles, []);
+  }
+
+  const legacyAttendanceRoles = await readLegacyAttendanceRoles(databases, projectId);
+  if (legacyAttendanceRoles.length > 0) {
+    return legacyAttendanceRoles;
+  }
+
+  const settingsRes = await getPlatformSettings();
+  return normalizeVolunteerRoles(settingsRes.data?.defaultAttendanceRoles, DEFAULT_VOLUNTEER_ROLES);
+}
+
 async function getDatabasesClient(useAdmin?: boolean) {
   if (useAdmin) {
     return (await createAdminClient()).databases;
   }
 
   return (await createSessionClient()).databases;
+}
+
+async function readLegacyAttendanceRoles(databases: DatabasesClient, projectId: string) {
+  try {
+    const doc = await databases.getDocument(DATABASE_ID, ATTENDANCE_CONFIG_COLLECTION_ID, projectId);
+    return normalizeVolunteerRoles(
+      Array.isArray(doc.attendanceRoles) ? (doc.attendanceRoles as string[]) : [],
+      [],
+    );
+  } catch (err: unknown) {
+    if (getErrorCode(err) === 404) {
+      return [];
+    }
+
+    throw err;
+  }
 }
 
 async function waitForAttributeAvailability(databases: DatabasesClient, key: string) {

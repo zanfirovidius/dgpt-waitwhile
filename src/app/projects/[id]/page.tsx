@@ -38,6 +38,7 @@ export default function ProjectDetailPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState('');
+  const [newVolunteerRole, setNewVolunteerRole] = useState('');
 
   const id = typeof params.id === 'string' ? params.id : params.id?.[0];
 
@@ -114,6 +115,7 @@ export default function ProjectDetailPage() {
     const res = await updateProject(id, editData);
     if (res.success) {
       await refreshData();
+      setNewVolunteerRole('');
       setIsEditing(false);
     } else {
       alert(res.error || 'Eroare la actualizarea proiectului');
@@ -281,6 +283,97 @@ export default function ProjectDetailPage() {
                       <span className="label-text-alt text-base-content/50">Folosit pentru generarea conturilor de voluntari (ex: @dgpt-cj.ro)</span>
                     </label>
                 </div>
+
+                <div className="divider opacity-50 text-[10px] uppercase font-bold tracking-widest">Setări Voluntari</div>
+
+                <div className="space-y-4 rounded-2xl border border-base-200 bg-base-200/30 p-5">
+                  <div>
+                    <h3 className="font-bold text-base-content">Roluri & Departamente</h3>
+                    <p className="text-xs text-base-content/50 mt-1">
+                      Aceste roluri sunt folosite atât în formularul de prezență, cât și în registrul de voluntari și la import.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {(editData.volunteerRoles || []).map((role, idx) => (
+                      <div key={`${role}-${idx}`} className="badge badge-lg border-base-300 gap-2 pr-1 h-10 pl-4 rounded-xl">
+                        <span className="text-xs font-bold font-mono tracking-tight">{role}</span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-circle btn-xs hover:bg-error hover:text-white"
+                          onClick={() =>
+                            setEditData({
+                              ...editData,
+                              volunteerRoles: (editData.volunteerRoles || []).filter((_, roleIndex) => roleIndex !== idx),
+                            })
+                          }
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    {(editData.volunteerRoles || []).length === 0 && (
+                      <p className="text-[10px] italic opacity-30">Nu există roluri configurate pentru acest proiect.</p>
+                    )}
+                  </div>
+
+                  <div className="join w-full max-w-md">
+                    <input
+                      type="text"
+                      className="input input-bordered join-item flex-1 rounded-l-2xl"
+                      placeholder="Ex: LOGISTICĂ"
+                      value={newVolunteerRole}
+                      onChange={(e) => setNewVolunteerRole(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') {
+                          return;
+                        }
+
+                        e.preventDefault();
+                        const normalizedRole = newVolunteerRole.trim().toUpperCase();
+                        if (!normalizedRole) {
+                          return;
+                        }
+
+                        const currentRoles = editData.volunteerRoles || [];
+                        if (currentRoles.includes(normalizedRole)) {
+                          setNewVolunteerRole('');
+                          return;
+                        }
+
+                        setEditData({
+                          ...editData,
+                          volunteerRoles: [...currentRoles, normalizedRole],
+                        });
+                        setNewVolunteerRole('');
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-primary join-item rounded-r-2xl"
+                      onClick={() => {
+                        const normalizedRole = newVolunteerRole.trim().toUpperCase();
+                        if (!normalizedRole) {
+                          return;
+                        }
+
+                        const currentRoles = editData.volunteerRoles || [];
+                        if (currentRoles.includes(normalizedRole)) {
+                          setNewVolunteerRole('');
+                          return;
+                        }
+
+                        setEditData({
+                          ...editData,
+                          volunteerRoles: [...currentRoles, normalizedRole],
+                        });
+                        setNewVolunteerRole('');
+                      }}
+                    >
+                      Adaugă
+                    </button>
+                  </div>
+                </div>
             </div>
         ) : (
             <>
@@ -305,6 +398,41 @@ export default function ProjectDetailPage() {
                        <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Oraș / Sală</span>
                        <span className="font-medium">{project.city || '-'}{project.city && project.venue ? ' / ' : ''}{project.venue || '-'}</span>
                    </div>
+                </div>
+
+                <div className="bg-base-200/40 rounded-2xl p-6 border border-base-200 mb-6">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+                          <Users size={20} />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-base-content">Voluntari & Waitwhile</h3>
+                          <p className="text-xs text-base-content/50">Setări comune pentru registru, import și prezență</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Suffix Email Waitwhile</span>
+                        <span className="font-medium">{project.waitwhileEmailDomainSuffix || '@dgpt.ro'}</span>
+                      </div>
+                    </div>
+
+                    <div className="md:max-w-xl">
+                      <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-2">Roluri & Departamente</span>
+                      <div className="flex flex-wrap gap-2">
+                        {(project.volunteerRoles || []).map((role) => (
+                          <div key={role} className="badge badge-lg border-base-300 h-10 px-4 rounded-xl">
+                            <span className="text-xs font-bold font-mono tracking-tight">{role}</span>
+                          </div>
+                        ))}
+                        {(project.volunteerRoles || []).length === 0 && (
+                          <span className="text-sm text-base-content/50">Nu există roluri configurate.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="bg-primary/5 rounded-2xl p-6 border border-primary/10">

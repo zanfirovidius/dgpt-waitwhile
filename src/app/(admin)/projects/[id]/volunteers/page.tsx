@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
   ArrowLeft, Users, Search, Filter, Plus, Upload, 
-  Trash2, Edit2, MoreVertical, CheckCircle2, XCircle, 
+  Trash2, Edit2, XCircle, 
   UserPlus, Mail, Phone, ExternalLink, RefreshCw,
-  LayoutDashboard
 } from 'lucide-react';
 import { getProject, Project } from '@/app/actions/projects';
 import { 
@@ -22,13 +21,11 @@ import {
     bulkCreateWaitwhileAccountsAction,
     bulkDeleteWaitwhileAccountsAction
 } from '@/app/actions/volunteer-waitwhile';
-import { getPlatformSettings } from '@/app/actions/platform';
 import { VolunteerModal } from '@/components/volunteers/VolunteerModal';
 import { ImportVolunteersModal } from '@/components/volunteers/ImportVolunteersModal';
 
 export default function VolunteersPage() {
   const params = useParams();
-  const router = useRouter();
   const projectId = typeof params.id === 'string' ? params.id : params.id?.[0];
 
   const [project, setProject] = useState<Project | null>(null);
@@ -36,7 +33,6 @@ export default function VolunteersPage() {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessingWW, setIsProcessingWW] = useState(false);
-  const [error, setError] = useState('');
   
   // Filtering & Pagination
   const [searchQuery, setSearchQuery] = useState('');
@@ -63,8 +59,6 @@ export default function VolunteersPage() {
     if (res.success) {
         setVolunteers(res.data || []);
         setTotal(res.total || 0);
-    } else {
-        setError(res.error || 'Eroare la preluarea voluntarilor');
     }
     setIsLoading(false);
   }, [projectId, searchQuery, categoryFilter, waitwhileFilter]);
@@ -72,12 +66,11 @@ export default function VolunteersPage() {
   useEffect(() => {
     const init = async () => {
         if (!projectId) return;
-        const [projRes, settingsRes] = await Promise.all([
-            getProject(projectId),
-            getPlatformSettings()
-        ]);
-        if (projRes.success) setProject(projRes.data!);
-        if (settingsRes.success) setCategories(settingsRes.data?.defaultAttendanceRoles || []);
+        const projRes = await getProject(projectId);
+        if (projRes.success && projRes.data) {
+            setProject(projRes.data);
+            setCategories(projRes.data.volunteerRoles || ['VOLUNTAR']);
+        }
         fetchVolunteers();
     };
     init();

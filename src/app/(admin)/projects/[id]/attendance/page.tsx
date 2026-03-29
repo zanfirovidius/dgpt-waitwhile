@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
-import { getProject } from '@/app/actions/projects';
+import { getProject, Project } from '@/app/actions/projects';
 import { getProjectAttendanceConfig, updateProjectAttendanceConfig, AttendanceConfig } from '@/app/actions/attendance-config';
 import { getProjectAttendanceEntries, validateAttendanceEntry, deleteAttendanceEntry, AttendanceEntry } from '@/app/actions/attendance';
 import { 
@@ -43,7 +43,7 @@ export default function AdminAttendancePage() {
 
     const [activeTab, setActiveTab] = useState<Tab>('records');
     const [loading, setLoading] = useState(true);
-    const [project, setProject] = useState<any>(null);
+    const [project, setProject] = useState<Project | null>(null);
     const [config, setConfig] = useState<AttendanceConfig | null>(null);
     const [entries, setEntries] = useState<AttendanceEntry[]>([]);
     
@@ -54,12 +54,11 @@ export default function AdminAttendancePage() {
     const [validatingEntryId, setValidatingEntryId] = useState<string | null>(null);
     const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
-    const [newRole, setNewRole] = useState('');
 
     // Modal state
     const [selectedEntry, setSelectedEntry] = useState<AttendanceEntry | null>(null);
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setLoading(true);
         try {
             const [pRes, cRes, eRes] = await Promise.all([
@@ -71,17 +70,17 @@ export default function AdminAttendancePage() {
             if (pRes.success) setProject(pRes.data);
             if (cRes.success) setConfig(cRes.data!);
             if (eRes.success) setEntries(eRes.data!);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error loading admin attendance:', err);
-            setMessage({ type: 'error', text: err.message || 'Eroare la încărcarea datelor' });
+            setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Eroare la încărcarea datelor' });
         } finally {
             setLoading(false);
         }
-    };
+    }, [projectId]);
 
     useEffect(() => {
-        loadData();
-    }, [projectId]);
+        void loadData();
+    }, [loadData]);
 
     const filteredEntries = useMemo(() => {
         return entries.filter((entry) => {
@@ -682,7 +681,7 @@ export default function AdminAttendancePage() {
                                         <select 
                                             className="select select-bordered rounded-2xl"
                                             value={config.attendanceAccessMode}
-                                            onChange={(e) => setConfig({ ...config, attendanceAccessMode: e.target.value as any })}
+                                            onChange={(e) => setConfig({ ...config, attendanceAccessMode: e.target.value as AttendanceConfig['attendanceAccessMode'] })}
                                         >
                                             <option value="token">Token Unic (URL)</option>
                                             <option value="pin">Cod PIN per Voluntar</option>
@@ -750,58 +749,25 @@ export default function AdminAttendancePage() {
                                         </div>
                                         <h2 className="text-xl font-bold">Roluri & Departamente</h2>
                                     </div>
-                                    <p className="text-xs opacity-60">Definește rolurile disponibile pentru voluntari în acest proiect.</p>
+                                    <p className="text-xs opacity-60">Rolurile disponibile în formularul de prezență și în registrul de voluntari se configurează acum la nivel de proiect.</p>
                                     
                                     <div className="flex flex-wrap gap-2">
-                                        {(config.attendanceRoles || []).map((role, idx) => (
-                                            <div key={idx} className="badge badge-lg border-base-300 gap-2 pr-1 h-10 pl-4 rounded-xl">
+                                        {(Array.isArray(project?.volunteerRoles) ? project.volunteerRoles : []).map((role: string, idx: number) => (
+                                            <div key={idx} className="badge badge-lg border-base-300 gap-2 h-10 px-4 rounded-xl">
                                                 <span className="text-xs font-bold font-mono tracking-tight">{role}</span>
-                                                <button 
-                                                    type="button"
-                                                    className="btn btn-ghost btn-circle btn-xs hover:bg-error hover:text-white"
-                                                    onClick={() => setConfig({ ...config, attendanceRoles: config.attendanceRoles?.filter((_, i) => i !== idx) })}
-                                                >
-                                                    <XCircle size={14} />
-                                                </button>
                                             </div>
                                         ))}
-                                        { (config.attendanceRoles || []).length === 0 && <p className="text-[10px] italic opacity-30">Niciun rol configurat. Se vor folosi cele implicite.</p> }
+                                        {(!Array.isArray(project?.volunteerRoles) || project.volunteerRoles.length === 0) && (
+                                            <p className="text-[10px] italic opacity-30">Nu există roluri configurate la nivel de proiect.</p>
+                                        )}
                                     </div>
 
-                                    <div className="join w-full max-w-sm">
-                                        <input 
-                                            type="text" 
-                                            className="input input-lg input-bordered join-item flex-1 rounded-l-2xl"
-                                            placeholder="Ex: Logistică"
-                                            value={newRole}
-                                            onChange={(e) => setNewRole(e.target.value)}
-                                            onKeyPress={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    if (!newRole.trim()) return;
-                                                    const roles = config.attendanceRoles || [];
-                                                    const normalized = newRole.trim().toUpperCase();
-                                                    if (roles.includes(normalized)) return;
-                                                    setConfig({ ...config, attendanceRoles: [...roles, normalized] });
-                                                    setNewRole('');
-                                                }
-                                            }}
-                                        />
-                                        <button 
-                                            type="button"
-                                            className="btn btn-lg btn-accent join-item rounded-r-2xl"
-                                            onClick={() => {
-                                                if (!newRole.trim()) return;
-                                                const roles = config.attendanceRoles || [];
-                                                const normalized = newRole.trim().toUpperCase();
-                                                if (roles.includes(normalized)) return;
-                                                setConfig({ ...config, attendanceRoles: [...roles, normalized] });
-                                                setNewRole('');
-                                            }}
-                                        >
-                                            Adaugă
-                                        </button>
-                                    </div>
+                                    <Link
+                                        href={`/projects/${projectId}`}
+                                        className="btn btn-outline btn-sm gap-2 rounded-xl w-fit"
+                                    >
+                                        Deschide setările proiectului <ExternalLink size={14} />
+                                    </Link>
                                 </div>
 
                                 <div className="divider opacity-20"></div>
@@ -937,7 +903,7 @@ export default function AdminAttendancePage() {
                                 <div className="space-y-2">
                                     <h4 className="font-bold text-sm">Note Voluntar</h4>
                                     <div className="bg-base-200/50 p-4 rounded-2xl italic text-sm border-l-4 border-primary">
-                                        "{selectedEntry.notes}"
+                                        &ldquo;{selectedEntry.notes}&rdquo;
                                     </div>
                                 </div>
                             )}

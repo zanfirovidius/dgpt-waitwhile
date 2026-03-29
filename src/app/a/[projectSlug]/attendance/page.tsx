@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { getProjectBySlug } from '@/app/actions/projects';
+import { useParams, useSearchParams } from 'next/navigation';
+import { getProjectBySlug, Project } from '@/app/actions/projects';
 import { submitAttendanceAction } from '@/app/actions/attendance';
 import { getProjectAttendanceConfig, AttendanceConfig } from '@/app/actions/attendance-config';
 import SignatureCanvas from 'react-signature-canvas';
 import { 
-  CheckCircle2, Clock, LogIn, LogOut, 
+  CheckCircle2, LogIn, LogOut, 
   RefreshCw, AlertCircle,
   ShieldCheck, ChevronRight, ArrowLeft, MapPin
 } from 'lucide-react';
@@ -46,7 +46,7 @@ export default function PublicAttendancePage() {
     const urlToken = searchParams.get('token');
 
     const [loading, setLoading] = useState(true);
-    const [project, setProject] = useState<any>(null);
+    const [project, setProject] = useState<Project | null>(null);
     const [config, setConfig] = useState<AttendanceConfig | null>(null);
     const [step, setStep] = useState<Step>('access');
     const [error, setError] = useState<string | null>(null);
@@ -67,6 +67,10 @@ export default function PublicAttendancePage() {
     });
 
     const sigCanvas = useRef<SignatureCanvas>(null);
+    const availableVolunteerRoles =
+        Array.isArray(project?.volunteerRoles) && project.volunteerRoles.length > 0
+            ? project.volunteerRoles
+            : ['ORGANIZATOR', 'ASISTENT', 'MEDIC', 'SECRETARIAT', 'VOLUNTAR', 'PROTOCOL', 'ȘEF-CABINET'];
 
     useEffect(() => {
         async function load() {
@@ -75,12 +79,17 @@ export default function PublicAttendancePage() {
                 if (!res.success) throw new Error(res.error || 'Proiectul nu a fost găsit.');
                 setProject(res.data?.project);
 
-                const confRes = await getProjectAttendanceConfig(res.data?.project.$id!);
+                const projectId = res.data?.project?.$id;
+                if (!projectId) {
+                    throw new Error('Proiectul nu a fost găsit.');
+                }
+
+                const confRes = await getProjectAttendanceConfig(projectId);
                 if (!confRes.success) throw new Error('Modulul de prezență nu este configurat.');
                 setConfig(confRes.data!);
                 setStep(resolveInitialStep(confRes.data!, urlToken));
-            } catch (err: any) {
-                setError(err.message);
+            } catch (err: unknown) {
+                setError(err instanceof Error ? err.message : 'Eroare la încărcarea formularului.');
             } finally {
                 setLoading(false);
             }
@@ -147,8 +156,8 @@ export default function PublicAttendancePage() {
             } else {
                 setError(res.error || 'A apărut o eroare la salvare.');
             }
-        } catch (err: any) {
-            setError(err.message || 'Eroare de sistem.');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Eroare de sistem.');
         } finally {
             setIsSubmitting(false);
         }
@@ -269,10 +278,7 @@ export default function PublicAttendancePage() {
                                     <div className="form-control">
                                         <label className="label pb-1"><span className="label-text font-bold text-sm">Rol / Departament</span></label>
                                         <div className="flex flex-wrap gap-2 pt-1">
-                                            {(config?.attendanceRoles && config.attendanceRoles.length > 0 
-                                                ? config.attendanceRoles 
-                                                : ['ORGANIZATOR', 'ASISTENT', 'MEDIC', 'SECRETARIAT', 'VOLUNTAR', 'PROTOCOL', 'ȘEF-CABINET']
-                                            ).map((role) => (
+                                            {availableVolunteerRoles.map((role) => (
                                                 <button
                                                     key={role}
                                                     type="button"

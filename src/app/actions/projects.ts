@@ -8,7 +8,7 @@ import { normalizeToSlug, ensureUniqueProjectSlug } from '@/lib/slug';
 import { getPlatformSettings } from './platform';
 import {
   deleteProjectVolunteerSettings,
-  resolveProjectWaitwhileEmailDomainSuffix,
+  getProjectVolunteerSettings,
   upsertProjectVolunteerSettings,
 } from './project-volunteer-settings';
 import { validateProjectFeedbackSetup, validateProjectAttendanceSetup } from '@/lib/setup-validation';
@@ -45,7 +45,25 @@ export interface Project {
   city?: string;
   venue?: string;
   waitwhileEmailDomainSuffix?: string;
+  volunteerRoles?: string[];
   [key: string]: unknown;
+}
+
+async function applyProjectVolunteerSettings(project: Project, options: { useAdmin?: boolean } = {}) {
+  const settingsRes = await getProjectVolunteerSettings(project.$id, {
+    legacySuffix: project.waitwhileEmailDomainSuffix,
+    useAdmin: options.useAdmin,
+  });
+
+  if (!settingsRes.success || !settingsRes.data) {
+    return project;
+  }
+
+  return {
+    ...project,
+    waitwhileEmailDomainSuffix: settingsRes.data.waitwhileEmailDomainSuffix,
+    volunteerRoles: settingsRes.data.volunteerRoles,
+  } as Project;
 }
 
 export async function createProject(data: {
@@ -145,6 +163,7 @@ export async function createProject(data: {
       projectId,
       {
         waitwhileEmailDomainSuffix: defaults?.defaultWaitwhileEmailDomainSuffix || '@dgpt.ro',
+        volunteerRoles: defaults?.defaultAttendanceRoles || [],
       },
       { useAdmin: true },
     );
@@ -176,7 +195,7 @@ export async function getProjects(): Promise<{ success: boolean; data?: Project[
     // Explicitly map to POJO to avoid serialization errors with Appwrite Document objects
     const data = await Promise.all(res.documents.map(async (doc) => {
       const normalized = normalizeProjectDates(doc as ProjectDocument);
-      return {
+      const hydratedProject = await applyProjectVolunteerSettings({
         $id: normalized.$id,
         $createdAt: normalized.$createdAt,
         name: normalized.name,
@@ -190,11 +209,10 @@ export async function getProjects(): Promise<{ success: boolean; data?: Project[
         eventName: normalized.eventName,
         city: normalized.city,
         venue: normalized.venue,
-        waitwhileEmailDomainSuffix: await resolveProjectWaitwhileEmailDomainSuffix(
-          normalized.$id,
-          normalized.waitwhileEmailDomainSuffix,
-        ),
-      } as Project;
+        waitwhileEmailDomainSuffix: normalized.waitwhileEmailDomainSuffix,
+      } as Project);
+
+      return hydratedProject;
     }));
 
     return { success: true, data };
@@ -217,7 +235,7 @@ export async function getProject(id: string): Promise<{ success: boolean; data?:
     
     // Explicitly map to POJO
     const normalized = normalizeProjectDates(doc as ProjectDocument);
-    const data: Project = {
+    const data = await applyProjectVolunteerSettings({
       $id: normalized.$id,
       $createdAt: normalized.$createdAt,
       name: normalized.name,
@@ -231,11 +249,8 @@ export async function getProject(id: string): Promise<{ success: boolean; data?:
       eventName: normalized.eventName,
       city: normalized.city,
       venue: normalized.venue,
-      waitwhileEmailDomainSuffix: await resolveProjectWaitwhileEmailDomainSuffix(
-        normalized.$id,
-        normalized.waitwhileEmailDomainSuffix,
-      ),
-    };
+      waitwhileEmailDomainSuffix: normalized.waitwhileEmailDomainSuffix,
+    } as Project);
 
     return { success: true, data };
   } catch (err: unknown) {
@@ -255,22 +270,25 @@ export async function updateProject(id: string, data: Partial<Project>): Promise
     // 2. Perform update
     const cleanData: Record<string, unknown> = { ...data };
     const waitwhileEmailDomainSuffix = data.waitwhileEmailDomainSuffix;
+    const volunteerRoles = data.volunteerRoles;
 
     delete cleanData.$id;
     delete cleanData.$createdAt;
     delete cleanData.waitwhileEmailDomainSuffix;
+    delete cleanData.volunteerRoles;
     delete cleanData.$updatedAt;
     delete cleanData.$permissions;
     delete cleanData.$databaseId;
     delete cleanData.$collectionId;
 
-    if (waitwhileEmailDomainSuffix !== undefined) {
+    if (waitwhileEmailDomainSuffix !== undefined || volunteerRoles !== undefined) {
       const currentProject = await getProject(id);
       const settingsRes = await upsertProjectVolunteerSettings(
         id,
-        { waitwhileEmailDomainSuffix },
+        { waitwhileEmailDomainSuffix, volunteerRoles },
         {
           legacySuffix: currentProject.success ? currentProject.data?.waitwhileEmailDomainSuffix : undefined,
+          legacyRoles: currentProject.success ? currentProject.data?.volunteerRoles : undefined,
         },
       );
 
@@ -346,7 +364,7 @@ export async function getProjectBySlug(
     if (projRes.total === 0) return { success: false, error: 'Project not found' };
     const projectDoc = projRes.documents[0];
     const normalized = normalizeProjectDates(projectDoc as ProjectDocument);
-    const project: Project = {
+    const project = await applyProjectVolunteerSettings({
         $id: normalized.$id,
         $createdAt: normalized.$createdAt,
         name: normalized.name,
@@ -360,12 +378,8 @@ export async function getProjectBySlug(
         eventName: normalized.eventName,
         city: normalized.city,
         venue: normalized.venue,
-        waitwhileEmailDomainSuffix: await resolveProjectWaitwhileEmailDomainSuffix(
-          normalized.$id,
-          normalized.waitwhileEmailDomainSuffix,
-          { useAdmin: true },
-        ),
-    };
+        waitwhileEmailDomainSuffix: normalized.waitwhileEmailDomainSuffix,
+    } as Project, { useAdmin: true });
 
     // 2. Get Config
     const confRes = await databases.listDocuments(DATABASE_ID, FEEDBACK_CONFIG_COLLECTION_ID, [

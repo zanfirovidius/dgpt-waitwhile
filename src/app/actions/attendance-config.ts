@@ -1,7 +1,7 @@
 'use server';
 
 import { createAdminClient, createSessionClient } from '@/lib/appwrite-server';
-import { Query, ID } from 'node-appwrite';
+import { Query } from 'node-appwrite';
 import { validateProjectAttendanceSetup } from '@/lib/setup-validation';
 import { getPlatformSettings } from './platform';
 import { getProject } from './projects';
@@ -35,8 +35,8 @@ export async function getProjectAttendanceConfig(projectId: string): Promise<{ s
     try {
       const doc = await databases.getDocument(DATABASE_ID, ATTENDANCE_CONFIG_COLLECTION_ID, projectId);
       return { success: true, data: JSON.parse(JSON.stringify(doc)) as AttendanceConfig };
-    } catch (err: any) {
-      if (err.code === 404) {
+    } catch (err: unknown) {
+      if (typeof err === 'object' && err !== null && 'code' in err && err.code === 404) {
         // LAZY INITIALIZATION for existing projects
         const { databases: adminDb } = await createAdminClient();
         const settingsRes = await getPlatformSettings();
@@ -49,7 +49,7 @@ export async function getProjectAttendanceConfig(projectId: string): Promise<{ s
           projectId,
           projectSlug: projectRes.data.projectSlug,
           attendanceEnabled: false,
-          attendanceAccessMode: (defaults?.defaultAttendanceAccessMode as any) || 'token',
+          attendanceAccessMode: (defaults?.defaultAttendanceAccessMode as AttendanceConfig['attendanceAccessMode']) || 'token',
           attendanceAccessToken: Math.random().toString(36).substring(2, 12).toUpperCase(),
           instructions: defaults?.defaultAttendanceInstructions,
           privacyNotice: defaults?.defaultAttendancePrivacyNotice,
@@ -58,7 +58,6 @@ export async function getProjectAttendanceConfig(projectId: string): Promise<{ s
           coordinatorValidationRequired: defaults?.defaultCoordinatorValidationRequired ?? true,
           signatureRequiredAtCheckout: defaults?.defaultSignatureRequiredAtCheckout ?? true,
           breakFieldEnabled: defaults?.defaultBreakFieldEnabled ?? true,
-          attendanceRoles: defaults?.defaultAttendanceRoles || []
         };
 
         const doc = await adminDb.createDocument(DATABASE_ID, ATTENDANCE_CONFIG_COLLECTION_ID, projectId, initial);
@@ -66,9 +65,9 @@ export async function getProjectAttendanceConfig(projectId: string): Promise<{ s
       }
       throw err;
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[AttendanceConfig] get error:', err);
-    return { success: false, error: err.message || 'Configuration error' };
+    return { success: false, error: err instanceof Error ? err.message : 'Configuration error' };
   }
 }
 
@@ -84,7 +83,13 @@ export async function updateProjectAttendanceConfig(projectId: string, data: Par
     const validation = validateProjectAttendanceSetup(updated);
     
     // 2. Perform update
-    const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, ...cleanData } = updated as any;
+    const cleanData = { ...updated } as Partial<AttendanceConfig> & Record<string, unknown>;
+    delete cleanData.$id;
+    delete cleanData.$createdAt;
+    delete cleanData.$updatedAt;
+    delete cleanData.$permissions;
+    delete cleanData.$databaseId;
+    delete cleanData.$collectionId;
     
     await databases.updateDocument(DATABASE_ID, ATTENDANCE_CONFIG_COLLECTION_ID, projectId, {
       ...cleanData,
@@ -93,9 +98,9 @@ export async function updateProjectAttendanceConfig(projectId: string, data: Par
     });
     
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[AttendanceConfig] update error:', err);
-    return { success: false, error: err.message || 'Failed to update config' };
+    return { success: false, error: err instanceof Error ? err.message : 'Failed to update config' };
   }
 }
 
@@ -114,7 +119,7 @@ export async function getAttendanceConfigBySlug(slug: string): Promise<{ success
         }
 
         return { success: true, data: JSON.parse(JSON.stringify(res.documents[0])) as AttendanceConfig };
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('[AttendanceConfig] getBySlug error:', err);
         return { success: false, error: 'Configuration error' };
     }
