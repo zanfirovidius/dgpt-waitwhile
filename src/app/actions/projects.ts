@@ -194,7 +194,7 @@ export async function getProjects(): Promise<{ success: boolean; data?: Project[
     
     // Explicitly map to POJO to avoid serialization errors with Appwrite Document objects
     const data = await Promise.all(res.documents.map(async (doc) => {
-      const normalized = normalizeProjectDates(doc as ProjectDocument);
+      const normalized = normalizeProjectDates(doc as unknown as ProjectDocument);
       const hydratedProject = await applyProjectVolunteerSettings({
         $id: normalized.$id,
         $createdAt: normalized.$createdAt,
@@ -234,7 +234,7 @@ export async function getProject(id: string): Promise<{ success: boolean; data?:
     const doc = await databases.getDocument(DATABASE_ID, PROJECTS_COLLECTION_ID, id);
     
     // Explicitly map to POJO
-    const normalized = normalizeProjectDates(doc as ProjectDocument);
+    const normalized = normalizeProjectDates(doc as unknown as ProjectDocument);
     const data = await applyProjectVolunteerSettings({
       $id: normalized.$id,
       $createdAt: normalized.$createdAt,
@@ -363,7 +363,7 @@ export async function getProjectBySlug(
     
     if (projRes.total === 0) return { success: false, error: 'Project not found' };
     const projectDoc = projRes.documents[0];
-    const normalized = normalizeProjectDates(projectDoc as ProjectDocument);
+    const normalized = normalizeProjectDates(projectDoc as unknown as ProjectDocument);
     const project = await applyProjectVolunteerSettings({
         $id: normalized.$id,
         $createdAt: normalized.$createdAt,

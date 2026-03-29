@@ -67,7 +67,7 @@ export default function AdminAttendancePage() {
                 getProjectAttendanceEntries(projectId)
             ]);
 
-            if (pRes.success) setProject(pRes.data);
+            if (pRes.success && pRes.data) setProject(pRes.data);
             if (cRes.success) setConfig(cRes.data!);
             if (eRes.success) setEntries(eRes.data!);
         } catch (err: unknown) {
@@ -112,6 +112,10 @@ export default function AdminAttendancePage() {
         [filteredEntries],
     );
     const selectedEntrySignatureSrc = getSignaturePreviewSrc(selectedEntry?.signatureImageId);
+    const publicAttendanceUrl =
+        typeof window !== 'undefined' && project?.projectSlug
+            ? `${window.location.origin}/a/${project.projectSlug}/attendance?token=${config?.attendanceAccessToken ?? ''}`
+            : '';
 
     const stats = useMemo(() => {
         const totalHours = entries.reduce((acc, curr) => acc + (curr.totalHoursDecimal || 0), 0);
@@ -804,13 +808,13 @@ export default function AdminAttendancePage() {
                                 <h3 className="text-xl font-black tracking-tight">Public URL</h3>
                                 <p className="text-xs opacity-60">Acesta este link-ul pe care voluntarii îl vor accesa pentru check-in/out.</p>
                                 <div className="bg-white/10 p-4 rounded-2xl font-mono text-[10px] break-all border border-white/10">
-                                    {typeof window !== 'undefined' ? `${window.location.origin}/a/${project.projectSlug}/attendance?token=${config.attendanceAccessToken}` : ''}
+                                    {publicAttendanceUrl}
                                 </div>
                                 <button 
                                     className="btn btn-sm btn-outline border-white/30 text-white rounded-xl w-full"
+                                    disabled={!publicAttendanceUrl}
                                     onClick={() => {
-                                        const url = `${window.location.origin}/a/${project.projectSlug}/attendance?token=${config.attendanceAccessToken}`;
-                                        navigator.clipboard.writeText(url);
+                                        void navigator.clipboard.writeText(publicAttendanceUrl);
                                     }}
                                 >
                                     Copiază Link
@@ -818,8 +822,8 @@ export default function AdminAttendancePage() {
                             </div>
 
                             <QRCodeModule 
-                                url={typeof window !== 'undefined' ? `${window.location.origin}/a/${project.projectSlug}/attendance?token=${config.attendanceAccessToken}` : ''}
-                                title={project.name}
+                                url={publicAttendanceUrl}
+                                title={project?.name ?? 'Proiect'}
                                 subtitle="Scanează pentru prezență (Check-in / Check-out)"
                                 active={config.attendanceEnabled}
                             />

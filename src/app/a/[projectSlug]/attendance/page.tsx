@@ -77,14 +77,13 @@ export default function PublicAttendancePage() {
             try {
                 const res = await getProjectBySlug(projectSlug);
                 if (!res.success) throw new Error(res.error || 'Proiectul nu a fost găsit.');
-                setProject(res.data?.project);
-
-                const projectId = res.data?.project?.$id;
-                if (!projectId) {
+                const projectData = res.data?.project;
+                if (!projectData) {
                     throw new Error('Proiectul nu a fost găsit.');
                 }
+                setProject(projectData);
 
-                const confRes = await getProjectAttendanceConfig(projectId);
+                const confRes = await getProjectAttendanceConfig(projectData.$id);
                 if (!confRes.success) throw new Error('Modulul de prezență nu este configurat.');
                 setConfig(confRes.data!);
                 setStep(resolveInitialStep(confRes.data!, urlToken));

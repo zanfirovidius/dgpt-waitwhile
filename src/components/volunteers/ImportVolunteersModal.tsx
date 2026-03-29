@@ -259,8 +259,8 @@ export function ImportVolunteersModal({ isOpen, onClose, onSuccess, projectId, c
 
   const handleDownloadTemplate = () => {
     const categoriesForImport = availableCategories.length > 0 ? availableCategories : ['VOLUNTAR'];
-    const sampleRows = [
-      IMPORT_HEADERS,
+    const sampleRows: string[][] = [
+      [...IMPORT_HEADERS],
       ['Popescu Maria', '0722123456', 'maria.popescu@example.com', categoriesForImport[0]],
       ['Prof. Univ. Dr. Ionescu Andrei', '0733123456', 'andrei.ionescu@example.com', categoriesForImport[1] || categoriesForImport[0]],
       ['', '', '', ''],

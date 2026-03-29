@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy:fly": "bash scripts/deploy-fly.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
