@@ -9,6 +9,7 @@ import {
   Clock,
   Edit2,
   ExternalLink,
+  ShieldCheck,
   MapPin, MessageSquare,
   Save,
   Trash2,
@@ -514,6 +515,26 @@ export default function ProjectDetailPage() {
                         )}
                       </>
                     )}
+                  </div>
+                </div>
+
+                <div className="bg-accent/5 rounded-2xl p-6 border border-accent/10 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+                        <ShieldCheck size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base-content">Instructaj Colectiv SSM/SU</h3>
+                        <p className="text-xs text-base-content/50">Colectare semnături, validare instructor și PDF final arhivat</p>
+                      </div>
+                    </div>
+                    <Link 
+                      href={`/projects/${project.$id}/training`}
+                      className="btn btn-accent btn-sm gap-2"
+                    >
+                      Gestionează Instructajul
+                    </Link>
                   </div>
                 </div>
 

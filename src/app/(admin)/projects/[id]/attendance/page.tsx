@@ -277,6 +277,9 @@ export default function AdminAttendancePage() {
             'Voluntar': e.volunteerFullName,
             'Email': e.volunteerEmail || '-',
             'Telefon': e.volunteerPhone || '-',
+            'CNP': e.cnp || '-',
+            'Serie CI': e.identitySeries || '-',
+            'Număr CI': e.identityNumber || '-',
             'Departament/Rol': e.departmentRole,
             'Data': e.attendanceDate,
             'Check-In': e.checkInAt ? format(new Date(e.checkInAt), 'HH:mm') : '-',
@@ -307,6 +310,8 @@ export default function AdminAttendancePage() {
 
         const tableData = filteredEntries.map(e => [
             e.volunteerFullName,
+            e.cnp || '-',
+            [e.identitySeries || '-', e.identityNumber || '-'].join(' / '),
             e.departmentRole,
             e.attendanceDate,
             e.checkInAt ? format(new Date(e.checkInAt), 'HH:mm') : '-',
@@ -316,7 +321,7 @@ export default function AdminAttendancePage() {
         ]);
 
         autoTable(doc, {
-            head: [['Voluntar', 'Rol', 'Data', 'In', 'Out', 'Ore', 'Val.']],
+            head: [['Voluntar', 'CNP', 'CI', 'Rol', 'Data', 'In', 'Out', 'Ore', 'Val.']],
             body: tableData,
             startY: 40,
             styles: { fontSize: 9 },
@@ -884,6 +889,21 @@ export default function AdminAttendancePage() {
                                         </div>
                                         <p className="font-bold break-all">{selectedEntry.volunteerEmail || '-'}</p>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="bg-base-200/50 p-4 rounded-2xl border border-base-200/70">
+                                    <p className="text-[10px] font-black uppercase opacity-40 mb-3">CNP</p>
+                                    <p className="font-bold break-all">{selectedEntry.cnp || '-'}</p>
+                                </div>
+                                <div className="bg-base-200/50 p-4 rounded-2xl border border-base-200/70">
+                                    <p className="text-[10px] font-black uppercase opacity-40 mb-3">Serie CI</p>
+                                    <p className="font-bold break-all">{selectedEntry.identitySeries || '-'}</p>
+                                </div>
+                                <div className="bg-base-200/50 p-4 rounded-2xl border border-base-200/70">
+                                    <p className="text-[10px] font-black uppercase opacity-40 mb-3">Număr CI</p>
+                                    <p className="font-bold break-all">{selectedEntry.identityNumber || '-'}</p>
                                 </div>
                             </div>
 

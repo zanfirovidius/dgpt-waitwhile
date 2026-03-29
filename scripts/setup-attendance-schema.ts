@@ -1,4 +1,4 @@
-import { Client, Databases, Permission, Role, ID } from 'node-appwrite';
+import { Client, Databases, DatabasesIndexType, OrderBy, Permission, Role } from 'node-appwrite';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
@@ -55,9 +55,9 @@ async function setupAttendanceSchema() {
         console.log(`🚀 Creating collection "${col.id}"...`);
         await databases.createCollection(DATABASE_ID, col.id, col.name, col.permissions);
         console.log(`✅ Collection "${col.id}" created.`);
-      } catch (e: any) {
-        if (e.code === 409) console.log(`ℹ️ Collection "${col.id}" already exists.`);
-        else throw e;
+      } catch (error: unknown) {
+        if (isAppwriteConflict(error)) console.log(`ℹ️ Collection "${col.id}" already exists.`);
+        else throw error;
       }
     }
 
@@ -92,8 +92,10 @@ async function setupAttendanceSchema() {
           await databases.createBooleanAttribute(DATABASE_ID, 'project_attendance_config', attr.key, false, attr.default as boolean);
         }
         console.log(`✅ Config attribute "${attr.key}" created.`);
-      } catch (e: any) {
-        if (e.code !== 409) console.error(`❌ Error creating config attribute "${attr.key}":`, e.message);
+      } catch (error: unknown) {
+        if (!isAppwriteConflict(error)) {
+          console.error(`❌ Error creating config attribute "${attr.key}":`, getErrorMessage(error));
+        }
       }
     }
 
@@ -111,8 +113,10 @@ async function setupAttendanceSchema() {
         try {
             await databases.createStringAttribute(DATABASE_ID, 'volunteer_attendance_sessions', attr.key, attr.size, false);
             console.log(`✅ Session attribute "${attr.key}" created.`);
-        } catch (e: any) {
-            if (e.code !== 409) console.error(`❌ Error creating session attribute "${attr.key}":`, e.message);
+        } catch (error: unknown) {
+            if (!isAppwriteConflict(error)) {
+              console.error(`❌ Error creating session attribute "${attr.key}":`, getErrorMessage(error));
+            }
         }
     }
 
@@ -125,6 +129,9 @@ async function setupAttendanceSchema() {
       { key: 'volunteerFullName', type: 'string', size: 255 },
       { key: 'volunteerEmail', type: 'string', size: 128 },
       { key: 'volunteerPhone', type: 'string', size: 64 },
+      { key: 'cnp', type: 'string', size: 32 },
+      { key: 'identitySeries', type: 'string', size: 32 },
+      { key: 'identityNumber', type: 'string', size: 32 },
       { key: 'departmentRole', type: 'string', size: 128 },
       { key: 'checkInAt', type: 'string', size: 64 },
       { key: 'checkOutAt', type: 'string', size: 64 },
@@ -155,33 +162,50 @@ async function setupAttendanceSchema() {
           await databases.createBooleanAttribute(DATABASE_ID, 'volunteer_attendance_entries', attr.key, false, attr.default as boolean);
         }
         console.log(`✅ Entry attribute "${attr.key}" created.`);
-      } catch (e: any) {
-        if (e.code !== 409) console.error(`❌ Error creating entry attribute "${attr.key}":`, e.message);
+      } catch (error: unknown) {
+        if (!isAppwriteConflict(error)) {
+          console.error(`❌ Error creating entry attribute "${attr.key}":`, getErrorMessage(error));
+        }
       }
     }
 
-    // 5. Indexes
-    console.log('\n--- Setting up indexes ---');
-    const indexes = [
-        { col: 'project_attendance_config', key: 'idx_slug', type: 'unique', attrs: ['projectSlug'], orders: ['asc'] },
-        { col: 'volunteer_attendance_entries', key: 'idx_proj_date', type: 'key', attrs: ['projectId', 'attendanceDate'], orders: ['asc', 'desc'] },
-        { col: 'volunteer_attendance_entries', key: 'idx_vol_name', type: 'key', attrs: ['volunteerFullName'], orders: ['asc'] },
-    ];
+	    // 5. Indexes
+	    console.log('\n--- Setting up indexes ---');
+	    const indexes = [
+	        { col: 'project_attendance_config', key: 'idx_slug', type: DatabasesIndexType.Unique, attrs: ['projectSlug'], orders: [OrderBy.Asc] },
+	        { col: 'volunteer_attendance_entries', key: 'idx_proj_date', type: DatabasesIndexType.Key, attrs: ['projectId', 'attendanceDate'], orders: [OrderBy.Asc, OrderBy.Desc] },
+	        { col: 'volunteer_attendance_entries', key: 'idx_vol_name', type: DatabasesIndexType.Key, attrs: ['volunteerFullName'], orders: [OrderBy.Asc] },
+	    ];
 
     for (const idx of indexes) {
         try {
-            await (databases as any).createIndex(DATABASE_ID, idx.col, idx.key, idx.type, idx.attrs, idx.orders);
+            await databases.createIndex(DATABASE_ID, idx.col, idx.key, idx.type, idx.attrs, idx.orders);
             console.log(`✅ Index "${idx.key}" created for "${idx.col}".`);
-        } catch (e: any) {
-            if (e.code !== 409) console.error(`❌ Error creating index "${idx.key}":`, e.message);
+        } catch (error: unknown) {
+            if (!isAppwriteConflict(error)) {
+              console.error(`❌ Error creating index "${idx.key}":`, getErrorMessage(error));
+            }
         }
     }
 
     console.log('\n🎉 Attendance schema setup finished!');
 
-  } catch (err: any) {
-    console.error('\n❌ CRITICAL ERR:', err.message);
+  } catch (error: unknown) {
+    console.error('\n❌ CRITICAL ERR:', getErrorMessage(error));
   }
 }
 
 setupAttendanceSchema();
+
+function isAppwriteConflict(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    Number((error as { code?: number }).code) === 409
+  );
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}

@@ -56,6 +56,9 @@ export default function PublicAttendancePage() {
         volunteerFullName: '',
         volunteerEmail: '',
         volunteerPhone: '',
+        cnp: '',
+        identitySeries: '',
+        identityNumber: '',
         departmentRole: '',
         attendanceDate: new Date().toISOString().split('T')[0],
         token: urlToken || '',
@@ -120,6 +123,10 @@ export default function PublicAttendancePage() {
         setFormData({ ...formData, action });
         setError(null);
         if (action === 'check-in') {
+            if (!formData.cnp.trim() || !formData.identitySeries.trim() || !formData.identityNumber.trim()) {
+                setError('CNP-ul, seria CI și numărul CI sunt obligatorii la check-in.');
+                return;
+            }
             handleSubmit('check-in');
         } else {
             setStep('checkout-details');
@@ -272,6 +279,44 @@ export default function PublicAttendancePage() {
                                                 value={formData.volunteerPhone}
                                                 onChange={(e) => setFormData({ ...formData, volunteerPhone: e.target.value })}
                                             />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3 rounded-2xl border border-base-200 bg-base-200/30 p-4">
+                                        <div>
+                                            <p className="text-sm font-bold">Date identitate</p>
+                                            <p className="text-xs opacity-50">Obligatorii la check-in. La check-out pot rămâne necompletate.</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                            <div className="form-control sm:col-span-3">
+                                                <label className="label pb-1"><span className="label-text font-bold text-xs opacity-70">CNP</span></label>
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Ex: 196..."
+                                                    className="input input-bordered input-md w-full rounded-xl bg-base-100 focus:input-primary"
+                                                    value={formData.cnp}
+                                                    onChange={(e) => setFormData({ ...formData, cnp: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="form-control">
+                                                <label className="label pb-1"><span className="label-text font-bold text-xs opacity-70">Serie CI</span></label>
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Ex: RX"
+                                                    className="input input-bordered input-md w-full rounded-xl bg-base-100 focus:input-primary uppercase"
+                                                    value={formData.identitySeries}
+                                                    onChange={(e) => setFormData({ ...formData, identitySeries: e.target.value.toUpperCase() })}
+                                                />
+                                            </div>
+                                            <div className="form-control sm:col-span-2">
+                                                <label className="label pb-1"><span className="label-text font-bold text-xs opacity-70">Număr CI</span></label>
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Ex: 123456"
+                                                    className="input input-bordered input-md w-full rounded-xl bg-base-100 focus:input-primary uppercase"
+                                                    value={formData.identityNumber}
+                                                    onChange={(e) => setFormData({ ...formData, identityNumber: e.target.value.toUpperCase() })}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="form-control">

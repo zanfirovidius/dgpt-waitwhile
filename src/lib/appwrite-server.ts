@@ -1,5 +1,6 @@
 import { Client, Account, Databases, Teams, Storage } from 'node-appwrite';
 import { cookies } from 'next/headers';
+import { APPWRITE_SESSION_JWT_COOKIE } from '@/lib/appwrite-auth';
 
 /**
  * Creates a server-side Appwrite client using the API key.
@@ -25,10 +26,25 @@ export async function createAdminClient() {
 export async function createSessionClient() {
   const cookieStore = await cookies();
   const allCookies = cookieStore.getAll();
+  const jwtCookie = cookieStore.get(APPWRITE_SESSION_JWT_COOKIE)?.value;
   const projectId = (process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || '').toLowerCase();
-  
-  // Find project-specific session cookie (case-insensitive)
-  const sessionCookie = allCookies.find(c => 
+
+  if (jwtCookie) {
+    const client = new Client()
+      .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!)
+      .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!)
+      .setJWT(jwtCookie);
+
+    return {
+      account: new Account(client),
+      databases: new Databases(client),
+      storage: new Storage(client),
+      teams: new Teams(client),
+    };
+  }
+
+  // Legacy fallback for environments where Appwrite session cookies are forwarded directly.
+  const sessionCookie = allCookies.find(c =>
     c.name.toLowerCase().startsWith(`a_session_${projectId}`) ||
     c.name.toLowerCase().startsWith('a_session_')
   );

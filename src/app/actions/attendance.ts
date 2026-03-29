@@ -8,7 +8,6 @@ import { normalizeName } from '@/lib/name-utils';
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 const PROJECTS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!;
 const ATTENDANCE_CONFIG_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ATTENDANCE_CONFIG_COLLECTION_ID || 'project_attendance_config';
-const SESSIONS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_VOLUNTEER_ATTENDANCE_SESSIONS_COLLECTION_ID || 'volunteer_attendance_sessions';
 const ENTRIES_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_VOLUNTEER_ATTENDANCE_ENTRIES_COLLECTION_ID || 'volunteer_attendance_entries';
 const ATTENDANCE_SIGNATURES_BUCKET_ID =
   process.env.NEXT_PUBLIC_APPWRITE_ATTENDANCE_SIGNATURES_BUCKET_ID || 'attendance_signatures';
@@ -21,6 +20,9 @@ export interface AttendanceEntry {
   volunteerFullName: string;
   volunteerEmail?: string;
   volunteerPhone?: string;
+  cnp?: string;
+  identitySeries?: string;
+  identityNumber?: string;
   departmentRole: string;
   projectVolunteerId?: string;
   checkInAt?: string;
@@ -50,6 +52,9 @@ export async function submitAttendanceAction(data: {
     volunteerFullName: string;
     volunteerEmail?: string;
     volunteerPhone?: string;
+    cnp?: string;
+    identitySeries?: string;
+    identityNumber?: string;
     departmentRole: string;
     attendanceDate: string;
     token?: string;
@@ -60,6 +65,7 @@ export async function submitAttendanceAction(data: {
 }): Promise<{ success: boolean; error?: string }> {
     try {
         const { databases, storage } = await createAdminClient();
+        await ensureAttendanceIdentityAttributes(databases);
 
         // 1. Verify Project & Config
         const projRes = await databases.listDocuments(DATABASE_ID, PROJECTS_COLLECTION_ID, [
@@ -81,8 +87,6 @@ export async function submitAttendanceAction(data: {
 
         let projectVolunteerId: string | undefined = undefined;
         try {
-            const queries = [Query.equal('projectId', projectId)];
-            
             // Build a query that matches any of the identifiers
             const identifierQueries = [];
             if (data.volunteerPhone) {
@@ -122,6 +126,14 @@ export async function submitAttendanceAction(data: {
 
         // 3. Process Action
         if (data.action === 'check-in') {
+            const cnp = sanitizeAttendanceIdentityValue(data.cnp);
+            const identitySeries = sanitizeAttendanceIdentityValue(data.identitySeries)?.toUpperCase();
+            const identityNumber = sanitizeAttendanceIdentityValue(data.identityNumber)?.toUpperCase();
+
+            if (!cnp || !identitySeries || !identityNumber) {
+                throw new Error('CNP-ul, seria CI și numărul CI sunt obligatorii la check-in.');
+            }
+
             // Check for existing open check-in
             const existing = await databases.listDocuments(DATABASE_ID, ENTRIES_COLLECTION_ID, [
                 Query.equal('projectId', projectId),
@@ -142,6 +154,9 @@ export async function submitAttendanceAction(data: {
                 volunteerFullName: data.volunteerFullName,
                 volunteerEmail: data.volunteerEmail,
                 volunteerPhone: data.volunteerPhone,
+                cnp,
+                identitySeries,
+                identityNumber,
                 departmentRole: data.departmentRole,
                 projectVolunteerId,
                 checkInAt: new Date().toISOString(),
@@ -188,9 +203,9 @@ export async function submitAttendanceAction(data: {
         }
 
         return { success: true };
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('[Attendance] action error:', err);
-        return { success: false, error: err.message || 'Eroare la procesarea prezenței' };
+        return { success: false, error: getErrorMessage(err, 'Eroare la procesarea prezenței') };
     }
 }
 
@@ -250,6 +265,69 @@ async function ensureAttendanceSignaturesBucket(
     }
 }
 
+async function ensureAttendanceIdentityAttributes(
+    databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+) {
+    const list = await databases.listAttributes(DATABASE_ID, ENTRIES_COLLECTION_ID);
+    const existing = new Map(list.attributes.map((attribute) => [attribute.key, attribute]));
+    const requiredAttributes = [
+        { key: 'cnp', size: 32 },
+        { key: 'identitySeries', size: 32 },
+        { key: 'identityNumber', size: 32 },
+    ];
+    const createdKeys: string[] = [];
+
+    for (const attribute of requiredAttributes) {
+        if (existing.has(attribute.key)) {
+            continue;
+        }
+
+        try {
+            await databases.createStringAttribute(
+                DATABASE_ID,
+                ENTRIES_COLLECTION_ID,
+                attribute.key,
+                attribute.size,
+                false,
+            );
+        } catch (err: unknown) {
+            const code =
+                typeof err === 'object' && err !== null && 'code' in err
+                    ? Number((err as { code?: number }).code)
+                    : undefined;
+
+            if (code !== 409) {
+                throw err;
+            }
+        }
+        createdKeys.push(attribute.key);
+    }
+
+    const keysToAwait = requiredAttributes
+        .map((attribute) => attribute.key)
+        .filter((key) => createdKeys.includes(key) || existing.get(key)?.status !== 'available');
+
+    for (const key of keysToAwait) {
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+            const attribute = await databases.getAttribute(DATABASE_ID, ENTRIES_COLLECTION_ID, key);
+
+            if (attribute.status === 'available') {
+                break;
+            }
+
+            if (attribute.status === 'failed' || attribute.status === 'stuck') {
+                throw new Error(`Attendance attribute "${key}" is ${attribute.status}`);
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+    }
+}
+
+function sanitizeAttendanceIdentityValue(value?: string | null) {
+    return (value || '').replace(/\s+/g, ' ').trim();
+}
+
 export async function getProjectAttendanceEntries(projectId: string): Promise<{ success: boolean; data?: AttendanceEntry[]; error?: string }> {
     try {
         const { databases } = await createSessionClient();
@@ -259,7 +337,8 @@ export async function getProjectAttendanceEntries(projectId: string): Promise<{ 
             Query.orderDesc('$createdAt')
         ]);
         return { success: true, data: JSON.parse(JSON.stringify(res.documents)) as AttendanceEntry[] };
-    } catch (err) {
+    } catch (err: unknown) {
+        console.error('[Attendance] getProjectAttendanceEntries error:', err);
         return { success: false, error: 'Eroare la preluarea datelor de prezență' };
     }
 }
@@ -293,9 +372,9 @@ export async function validateAttendanceEntry(
             success: true,
             data: JSON.parse(JSON.stringify(updated)) as AttendanceEntry,
         };
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('[Attendance] validateAttendanceEntry error:', err);
-        return { success: false, error: err.message || 'Eroare la validarea rândului' };
+        return { success: false, error: getErrorMessage(err, 'Eroare la validarea rândului') };
     }
 }
 
@@ -320,9 +399,9 @@ export async function deleteAttendanceEntry(
         }
 
         return { success: true, deletedId: entryId };
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('[Attendance] deleteAttendanceEntry error:', err);
-        return { success: false, error: err.message || 'Eroare la ștergerea înregistrării' };
+        return { success: false, error: getErrorMessage(err, 'Eroare la ștergerea înregistrării') };
     }
 }
 
@@ -336,8 +415,12 @@ export async function getVolunteerAttendanceEntries(volunteerId: string): Promis
             Query.limit(100)
         ]);
         return { success: true, data: JSON.parse(JSON.stringify(res.documents)) as AttendanceEntry[] };
-    } catch (err: any) {
+    } catch (err: unknown) {
         console.error('[Attendance] getVolunteerAttendanceEntries error:', err);
         return { success: false, error: 'Eroare la preluarea prezențelor voluntarului' };
     }
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+    return error instanceof Error ? error.message : fallback;
 }

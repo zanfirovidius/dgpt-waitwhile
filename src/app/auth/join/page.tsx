@@ -1,13 +1,12 @@
 'use client';
 
 import { teams } from '@/lib/appwrite';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { useState, useEffect, Suspense } from 'react';
+import { syncServerSessionFromBrowser } from '@/lib/appwrite-session-client';
+import { useSearchParams } from 'next/navigation';
+import { useState, Suspense } from 'react';
 
 function JoinForm() {
   const searchParams = useSearchParams();
-  const router = useRouter();
-  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,10 +26,9 @@ function JoinForm() {
 
     try {
       await teams.updateMembershipStatus(teamId, membershipId, userId, secret);
-      // Wait a moment for Appwrite to establish the session cookies
-      setTimeout(() => {
-         window.location.href = '/';
-      }, 1000);
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      await syncServerSessionFromBrowser();
+      window.location.href = '/';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to accept invitation.');
       setIsLoading(false);

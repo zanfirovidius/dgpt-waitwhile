@@ -1,6 +1,7 @@
 'use client';
 
 import { account } from '@/lib/appwrite';
+import { syncServerSessionFromBrowser } from '@/lib/appwrite-session-client';
 import { OAuthProvider } from 'appwrite';
 import { useState } from 'react';
 
@@ -17,6 +18,7 @@ export default function LoginPage() {
 
     try {
       await account.createEmailPasswordSession(email, password);
+      await syncServerSessionFromBrowser();
       window.location.href = '/'; // redirect to home on success
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to login. Please check your credentials.');
@@ -34,7 +36,7 @@ export default function LoginPage() {
         `${window.location.origin}/`, // success
         `${window.location.origin}/auth/login` // failure
       );
-    } catch (err) {
+    } catch {
       setError('OAuth login failed.');
       setIsLoading(false);
     }
