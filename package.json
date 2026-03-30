@@ -8,7 +8,9 @@
     "start": "next start -H 0.0.0.0",
     "lint": "eslint",
     "deploy:fly": "bash scripts/deploy-fly.sh",
-    "setup:training-schema": "npx ts-node scripts/setup-training-schema.ts"
+    "setup:volunteers-schema": "npx ts-node scripts/setup-volunteers-schema.ts",
+    "setup:training-schema": "npx ts-node scripts/setup-training-schema.ts",
+    "setup:incidents-schema": "npx ts-node scripts/setup-incidents-schema.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",

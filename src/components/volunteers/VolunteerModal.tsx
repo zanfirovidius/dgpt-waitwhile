@@ -20,6 +20,10 @@ export function VolunteerModal({ isOpen, onClose, onSuccess, projectId, voluntee
     lastName: '',
     email: '',
     phone: '',
+    address: '',
+    cnp: '',
+    identitySeries: '',
+    identityNumber: '',
     activityCategory: categories[0] || 'VOLUNTAR',
     status: 'active',
     notes: '',
@@ -37,6 +41,10 @@ export function VolunteerModal({ isOpen, onClose, onSuccess, projectId, voluntee
             lastName: '',
             email: '',
             phone: '',
+            address: '',
+            cnp: '',
+            identitySeries: '',
+            identityNumber: '',
             activityCategory: categories[0] || 'VOLUNTAR',
             status: 'active',
             notes: '',
@@ -60,8 +68,8 @@ export function VolunteerModal({ isOpen, onClose, onSuccess, projectId, voluntee
         } else {
             setError(res.error || 'Eroare la salvarea voluntarului');
         }
-    } catch (err: any) {
-        setError(err.message || 'Eroare neașteptată');
+    } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Eroare neașteptată');
     } finally {
         setIsSaving(false);
     }
@@ -139,12 +147,52 @@ export function VolunteerModal({ isOpen, onClose, onSuccess, projectId, voluntee
               />
             </div>
             <div className="form-control">
-              <label className="label"><span className="label-text font-bold">Telefon (Opțional)</span></label>
+              <label className="label"><span className="label-text font-bold">Telefon (pentru acces SMS)</span></label>
               <input 
                 type="tel" 
                 className="input input-bordered w-full" 
                 value={formData.phone || ''} 
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })} 
+              />
+            </div>
+          </div>
+
+          <div className="form-control">
+            <label className="label"><span className="label-text font-bold">Adresă</span></label>
+            <input
+              type="text"
+              className="input input-bordered w-full"
+              value={formData.address || ''}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="form-control">
+              <label className="label"><span className="label-text font-bold">CNP</span></label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={formData.cnp || ''}
+                onChange={(e) => setFormData({ ...formData, cnp: e.target.value })}
+              />
+            </div>
+            <div className="form-control">
+              <label className="label"><span className="label-text font-bold">Serie CI</span></label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={formData.identitySeries || ''}
+                onChange={(e) => setFormData({ ...formData, identitySeries: e.target.value })}
+              />
+            </div>
+            <div className="form-control">
+              <label className="label"><span className="label-text font-bold">Număr CI</span></label>
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                value={formData.identityNumber || ''}
+                onChange={(e) => setFormData({ ...formData, identityNumber: e.target.value })}
               />
             </div>
           </div>

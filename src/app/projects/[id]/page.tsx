@@ -3,15 +3,18 @@
 import { AttendanceConfig, getProjectAttendanceConfig } from '@/app/actions/attendance-config';
 import { FeedbackConfig, getProjectFeedbackConfig } from '@/app/actions/feedback-config';
 import { deleteProject, getProject, Project, updateProject } from '@/app/actions/projects';
+import { sendVolunteerPortalTestSms } from '@/app/actions/volunteer-portal';
 import { formatProjectDateRange } from '@/lib/project-dates';
 import {
   AlertCircle, ArrowLeft,
   Clock,
   Edit2,
   ExternalLink,
+  ShieldAlert,
   ShieldCheck,
   MapPin, MessageSquare,
   Save,
+  Smartphone,
   Trash2,
   Users,
   X
@@ -38,6 +41,10 @@ export default function ProjectDetailPage() {
   const [attendanceConfig, setAttendanceConfig] = useState<AttendanceConfig | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSmsTestOpen, setIsSmsTestOpen] = useState(false);
+  const [isSendingSmsTest, setIsSendingSmsTest] = useState(false);
+  const [smsTestPhone, setSmsTestPhone] = useState('');
+  const [smsTestMessage, setSmsTestMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [error, setError] = useState('');
   const [newVolunteerRole, setNewVolunteerRole] = useState('');
 
@@ -136,6 +143,38 @@ export default function ProjectDetailPage() {
       alert(res.error || 'Eroare la ștergerea proiectului');
       setIsDeleting(false);
     }
+  };
+
+  const handleSendSmsTest = async () => {
+    if (!project?.projectSlug) {
+      setSmsTestMessage({
+        type: 'error',
+        text: 'Proiectul nu are încă un slug public pentru portalul voluntarului.',
+      });
+      return;
+    }
+
+    setIsSendingSmsTest(true);
+    setSmsTestMessage(null);
+
+    const res = await sendVolunteerPortalTestSms({
+      projectSlug: project.projectSlug,
+      phone: smsTestPhone,
+    });
+
+    if (res.success) {
+      setSmsTestMessage({
+        type: 'success',
+        text: `SMS de test trimis pe ${res.data.maskedPhone} prin ${res.data.provider.toUpperCase()}.`,
+      });
+    } else {
+      setSmsTestMessage({
+        type: 'error',
+        text: res.error || 'Nu am putut trimite SMS-ul de test.',
+      });
+    }
+
+    setIsSendingSmsTest(false);
   };
 
   if (isLoading) {
@@ -538,6 +577,46 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
 
+                <div className="bg-error/5 rounded-2xl p-6 border border-error/10 mt-6">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center text-error">
+                          <ShieldAlert size={20} />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-base-content">Incidente GDPR / Securitate</h3>
+                          <p className="text-xs text-base-content/50">Raportare publică, evaluare DPO, registru și audit trail</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {project.projectSlug && (
+                          <a
+                            href={`/i/${project.projectSlug}/incident`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-outline btn-sm gap-2"
+                          >
+                            Formular Public <ExternalLink size={14} />
+                          </a>
+                        )}
+                        <Link 
+                          href={`/projects/${project.$id}/incident-registry`}
+                          className="btn btn-outline btn-sm gap-2"
+                        >
+                          Registru Oficial
+                        </Link>
+                        <Link 
+                          href={`/projects/${project.$id}/incidents`}
+                          className="btn btn-error btn-sm gap-2"
+                        >
+                          Gestionează Incidentele
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-accent/5 rounded-2xl p-6 border border-accent/10 mt-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -549,13 +628,85 @@ export default function ProjectDetailPage() {
                         <p className="text-xs text-base-content/50">Import, CRUD și sincronizare Waitwhile</p>
                       </div>
                     </div>
-                    <Link 
-                      href={`/projects/${project.$id}/volunteers`}
-                      className="btn btn-accent btn-sm gap-2"
-                    >
-                      Gestionează Voluntari
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                      {project.projectSlug && (
+                        <a
+                          href={`/v/${project.projectSlug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-outline btn-sm gap-2"
+                        >
+                          Portal Public <ExternalLink size={14} />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm gap-2"
+                        onClick={() => {
+                          setIsSmsTestOpen((current) => !current);
+                          setSmsTestMessage(null);
+                        }}
+                        disabled={!project.projectSlug}
+                      >
+                        <Smartphone size={14} />
+                        Testează SMS OTP
+                      </button>
+                      <Link 
+                        href={`/projects/${project.$id}/volunteers`}
+                        className="btn btn-accent btn-sm gap-2"
+                      >
+                        Gestionează Voluntari
+                      </Link>
+                    </div>
                   </div>
+                  {isSmsTestOpen && (
+                    <div className="mt-4 rounded-2xl border border-accent/15 bg-base-100/80 p-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                        <label className="form-control flex-1">
+                          <span className="label">
+                            <span className="label-text font-semibold">Telefon pentru test OTP</span>
+                          </span>
+                          <input
+                            type="tel"
+                            className="input input-bordered w-full"
+                            placeholder="07xxxxxxxx sau +407xxxxxxxx"
+                            value={smsTestPhone}
+                            onChange={(event) => setSmsTestPhone(event.target.value)}
+                          />
+                        </label>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="btn btn-accent btn-sm gap-2"
+                            onClick={handleSendSmsTest}
+                            disabled={isSendingSmsTest || !smsTestPhone.trim()}
+                          >
+                            {isSendingSmsTest ? <span className="loading loading-spinner loading-xs" /> : <Smartphone size={14} />}
+                            Trimite test
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                              setIsSmsTestOpen(false);
+                              setSmsTestMessage(null);
+                            }}
+                          >
+                            Închide
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-base-content/60">
+                        Trimite un OTP real către numărul introdus, folosind providerul SMS configurat pentru portalul voluntarului.
+                      </p>
+                      {smsTestMessage && (
+                        <div className={`mt-3 alert rounded-xl text-sm ${smsTestMessage.type === 'success' ? 'alert-success' : 'alert-error'}`}>
+                          <AlertCircle size={16} />
+                          <span>{smsTestMessage.text}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
             </>
         )}

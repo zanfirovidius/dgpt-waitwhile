@@ -1,4 +1,4 @@
-import { Client, Account, Databases, Teams, Storage } from 'node-appwrite';
+import { Client, Account, Databases, Teams, Storage, Users, Messaging } from 'node-appwrite';
 import { cookies } from 'next/headers';
 import { APPWRITE_SESSION_JWT_COOKIE } from '@/lib/appwrite-auth';
 
@@ -17,6 +17,8 @@ export async function createAdminClient() {
     databases: new Databases(client),
     storage: new Storage(client),
     teams: new Teams(client),
+    users: new Users(client),
+    messaging: new Messaging(client),
   };
 }
 
@@ -40,6 +42,8 @@ export async function createSessionClient() {
       databases: new Databases(client),
       storage: new Storage(client),
       teams: new Teams(client),
+      users: new Users(client),
+      messaging: new Messaging(client),
     };
   }
 
@@ -72,5 +76,7 @@ export async function createSessionClient() {
     databases: new Databases(client),
     storage: new Storage(client),
     teams: new Teams(client),
+    users: new Users(client),
+    messaging: new Messaging(client),
   };
 }

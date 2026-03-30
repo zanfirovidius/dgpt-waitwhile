@@ -193,6 +193,16 @@ export default function VolunteersPage() {
             </div>
         </div>
         <div className="flex gap-2">
+            {project?.projectSlug && (
+              <a
+                href={`/v/${project.projectSlug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-outline btn-sm gap-2 rounded-xl"
+              >
+                <ExternalLink size={16} /> Portal Public
+              </a>
+            )}
             <button 
                 onClick={() => setIsImportModalOpen(true)}
                 className="btn btn-outline btn-sm gap-2 rounded-xl"

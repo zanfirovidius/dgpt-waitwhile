@@ -44,6 +44,13 @@ export default function PublicAttendancePage() {
     const searchParams = useSearchParams();
     const projectSlug = params.projectSlug as string;
     const urlToken = searchParams.get('token');
+    const prefilledFullName = searchParams.get('fullName') || '';
+    const prefilledEmail = searchParams.get('email') || '';
+    const prefilledPhone = searchParams.get('phone') || '';
+    const prefilledRole = searchParams.get('role') || '';
+    const prefilledCnp = searchParams.get('cnp') || '';
+    const prefilledIdentitySeries = searchParams.get('identitySeries') || '';
+    const prefilledIdentityNumber = searchParams.get('identityNumber') || '';
 
     const [loading, setLoading] = useState(true);
     const [project, setProject] = useState<Project | null>(null);
@@ -53,13 +60,13 @@ export default function PublicAttendancePage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const [formData, setFormData] = useState({
-        volunteerFullName: '',
-        volunteerEmail: '',
-        volunteerPhone: '',
-        cnp: '',
-        identitySeries: '',
-        identityNumber: '',
-        departmentRole: '',
+        volunteerFullName: prefilledFullName,
+        volunteerEmail: prefilledEmail,
+        volunteerPhone: prefilledPhone,
+        cnp: prefilledCnp,
+        identitySeries: prefilledIdentitySeries,
+        identityNumber: prefilledIdentityNumber,
+        departmentRole: prefilledRole,
         attendanceDate: new Date().toISOString().split('T')[0],
         token: urlToken || '',
         pin: '',

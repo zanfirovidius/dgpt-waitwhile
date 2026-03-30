@@ -29,7 +29,14 @@ export function GlobalLayoutWrapper({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isPublicRoute = pathname?.startsWith('/public') || pathname?.startsWith('/auth') || pathname?.startsWith('/f/') || pathname?.startsWith('/a/') || pathname?.startsWith('/t/');
+  const isPublicRoute =
+    pathname?.startsWith('/public') ||
+    pathname?.startsWith('/auth') ||
+    pathname?.startsWith('/f/') ||
+    pathname?.startsWith('/a/') ||
+    pathname?.startsWith('/t/') ||
+    pathname?.startsWith('/i/') ||
+    pathname?.startsWith('/v/');
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(!isPublicRoute);
 
@@ -162,6 +169,7 @@ export function GlobalLayoutWrapper({
                 </div>
                 <div className="avatar">
                   <div className="w-9 h-9 rounded-full border-2 border-primary overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={sessionUser.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(sessionUser.name || 'User')}`} alt="Avatar" className="w-full h-full object-cover" />
                   </div>
                 </div>

@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
-  ArrowLeft, User, Mail, Phone, Calendar, Clock, 
-  CheckCircle2, AlertCircle, Trash2, Edit2, 
-  ExternalLink, UserCheck, UserPlus, XCircle,
+  ArrowLeft, Mail, Phone, Calendar, Clock, 
+  CheckCircle2, AlertCircle, Trash2,
+  ExternalLink, UserPlus, XCircle,
   FileText, Award, CreditCard, History
 } from 'lucide-react';
 import { getVolunteer, ProjectVolunteer, deleteVolunteer } from '@/app/actions/volunteers';
@@ -25,7 +25,6 @@ export default function VolunteerDetailPage() {
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessingWW, setIsProcessingWW] = useState(false);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -124,6 +123,16 @@ export default function VolunteerDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          {project?.projectSlug && (
+            <a
+              href={`/v/${project.projectSlug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-ghost btn-sm gap-2 rounded-xl"
+            >
+              <ExternalLink size={16} /> Portal Public
+            </a>
+          )}
           <button onClick={handleDelete} className="btn btn-ghost btn-sm text-error gap-2 rounded-xl">
             <Trash2 size={16} /> Șterge
           </button>
@@ -162,6 +171,28 @@ export default function VolunteerDetailPage() {
                 <div>
                   <p className="text-[10px] font-black opacity-30 uppercase tracking-widest">Telefon</p>
                   <p className="font-bold">{volunteer.phone || 'Nespecificat'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-sm">
+                <div className="w-10 h-10 rounded-xl bg-base-200 flex items-center justify-center text-accent">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black opacity-30 uppercase tracking-widest">Adresă</p>
+                  <p className="font-bold">{volunteer.address || 'Nespecificată'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-sm">
+                <div className="w-10 h-10 rounded-xl bg-base-200 flex items-center justify-center text-accent">
+                  <CreditCard size={18} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black opacity-30 uppercase tracking-widest">Identitate</p>
+                  <p className="font-bold">
+                    {volunteer.cnp || volunteer.identitySeries || volunteer.identityNumber
+                      ? `CNP ${volunteer.cnp || '-'} • CI ${volunteer.identitySeries || '-'} ${volunteer.identityNumber || '-'}`
+                      : 'Nespecificată'}
+                  </p>
                 </div>
               </div>
             </div>
