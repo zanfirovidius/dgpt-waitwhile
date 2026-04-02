@@ -1,0 +1,67 @@
+export const DOCTOR_SPECIALTY_OPTIONS = [
+  'Alergologie și imunologie clinică',
+  'Anatomie patologică',
+  'Anestezie și terapie intensivă',
+  'Biochimie medicală',
+  'Boli infecțioase',
+  'Cardiologie',
+  'Cardiologie pediatrică',
+  'Chirurgie cardiovasculară',
+  'Chirurgie generală',
+  'Chirurgie orală și maxilo-facială',
+  'Chirurgie pediatrică',
+  'Chirurgie plastică, estetică și microchirurgie reconstructivă',
+  'Chirurgie toracică',
+  'Chirurgie vasculară',
+  'Dermatovenerologie',
+  'Diabet zaharat, nutriție și boli metabolice',
+  'Endocrinologie',
+  'Epidemiologie',
+  'Farmacologie clinică',
+  'Gastroenterologie',
+  'Genetică medicală',
+  'Geriatrie și gerontologie',
+  'Hematologie',
+  'Igienă',
+  'Medicină de familie',
+  'Medicină de laborator',
+  'Medicină de urgență',
+  'Medicină fizică și de reabilitare',
+  'Medicină internă',
+  'Medicină legală',
+  'Medicină nucleară',
+  'Medicină sportivă',
+  'Medicina muncii',
+  'Microbiologie medicală',
+  'Nefrologie',
+  'Neonatologie',
+  'Neurochirurgie',
+  'Neurologie',
+  'Obstetrică-ginecologie',
+  'Oftalmologie',
+  'Oncologie medicală',
+  'ORL (otorinolaringologie)',
+  'Ortopedie și traumatologie',
+  'Pediatrie',
+  'Pneumologie',
+  'Psihiatrie',
+  'Psihiatrie pediatrică',
+  'Radiologie și imagistică medicală',
+  'Radioterapie',
+  'Recuperare, medicină fizică și balneologie',
+  'Reumatologie',
+  'Sănătate publică și management',
+  'Transfuzie sanguină',
+  'Urologie',
+  'Toxicologie',
+] as const;
+
+export function getDoctorSpecialtyOptions(currentValue?: string | null) {
+  const current = (currentValue || '').trim();
+
+  if (!current || DOCTOR_SPECIALTY_OPTIONS.includes(current as (typeof DOCTOR_SPECIALTY_OPTIONS)[number])) {
+    return [...DOCTOR_SPECIALTY_OPTIONS];
+  }
+
+  return [current, ...DOCTOR_SPECIALTY_OPTIONS];
+}

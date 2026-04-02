@@ -10,6 +10,29 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
+.select > select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: none;
+}
+
+.select > select:focus {
+  outline: none;
+}
+
+.select > select option,
+.select > select optgroup,
+select option,
+select optgroup {
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+}
+
+.dropdown-content {
+  background-color: var(--color-base-100);
+}
+
 .prose-markdown p {
   margin-bottom: 0.5rem;
 }

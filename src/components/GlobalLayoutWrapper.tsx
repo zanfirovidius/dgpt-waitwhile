@@ -6,13 +6,14 @@ import {
   UserPlus, 
   UserMinus, 
   Beaker, 
-  BarChart3, 
   Package, 
   ClipboardList, 
   PlusCircle, 
   Mail,
   Heart,
-  Settings
+  Settings,
+  Stethoscope,
+  LayoutTemplate
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -36,7 +37,9 @@ export function GlobalLayoutWrapper({
     pathname?.startsWith('/a/') ||
     pathname?.startsWith('/t/') ||
     pathname?.startsWith('/i/') ||
-    pathname?.startsWith('/v/');
+    pathname?.startsWith('/v/') ||
+    pathname === '/m' ||
+    pathname?.startsWith('/m/');
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(!isPublicRoute);
 
@@ -207,14 +210,17 @@ export function GlobalLayoutWrapper({
           <Link href="/projects/new" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200">
             <PlusCircle size={16} /> Proiect Nou
           </Link>
+          <Link href="/doctors" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-secondary">
+            <Stethoscope size={16} /> Registru Medici
+          </Link>
+          <Link href="/templates" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-warning">
+            <LayoutTemplate size={16} /> Bibliotecă Template-uri
+          </Link>
 
           <div className="divider my-2"></div>
 
           {/* Zone 2: Occupancy & Resources */}
           <p className="text-[10px] uppercase font-bold text-base-content/40 tracking-widest px-2 mb-1">Date și Resurse</p>
-          <Link href="/occupancy" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-warning">
-            <BarChart3 size={16} /> Ocupare
-          </Link>
           <Link href="/resources" className="btn btn-sm btn-ghost justify-start w-full gap-2 hover:bg-base-200 text-accent">
             <Package size={16} /> Resurse
           </Link>

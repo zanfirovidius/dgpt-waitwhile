@@ -2,6 +2,7 @@
 
 import { getProjects, deleteProject, Project } from '@/app/actions/projects';
 import { formatProjectDateRange } from '@/lib/project-dates';
+import { getProjectStatusBadgeClass, getProjectStatusLabel } from '@/lib/project-status';
 import { ClipboardList, MapPin, Plus, Trash2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -11,17 +12,29 @@ export default function ProjectsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const refreshProjects = () => {
-    setIsLoading(true);
-    getProjects().then((res) => {
-      if (res.success && res.data) setProjects(res.data);
-      else setError(res.error || 'Failed to load projects');
-      setIsLoading(false);
-    });
-  };
-
   useEffect(() => {
-    refreshProjects();
+    let cancelled = false;
+
+    void (async () => {
+      const res = await getProjects();
+
+      if (cancelled) {
+        return;
+      }
+
+      if (res.success && res.data) {
+        setProjects(res.data);
+        setError('');
+      } else {
+        setError(res.error || 'Failed to load projects');
+      }
+
+      setIsLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -103,8 +116,13 @@ export default function ProjectsPage() {
                 </div>
 
                 <div className="card-actions pt-2 border-t border-base-200 mt-auto items-center justify-between">
-                  <div className={`badge badge-ghost badge-sm text-[9px] font-bold uppercase ${project.publicFeedbackFormStatus === 'active' ? 'text-success bg-success/5' : 'opacity-40'}`}>
-                    {project.publicFeedbackFormStatus || 'Draft'}
+                  <div className="flex flex-wrap gap-2">
+                    <div className={`badge badge-sm text-[9px] font-bold uppercase ${getProjectStatusBadgeClass(project.projectStatus)}`}>
+                      {getProjectStatusLabel(project.projectStatus)}
+                    </div>
+                    <div className={`badge badge-ghost badge-sm text-[9px] font-bold uppercase ${project.publicFeedbackFormStatus === 'active' ? 'text-success bg-success/5' : 'opacity-40'}`}>
+                      Feedback {project.publicFeedbackFormStatus || 'draft'}
+                    </div>
                   </div>
                   <Link href={`/projects/${project.$id}`} className="btn btn-primary btn-xs opacity-0 group-hover:opacity-100 transition-opacity gap-1">
                     Gestionați <ArrowRight size={10} />

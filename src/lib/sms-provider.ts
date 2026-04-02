@@ -7,6 +7,56 @@ type VerifySmsCodeResult =
   | { success: true }
   | { success: false; error: string; code?: 'wrong_code' | 'expired_code' | 'provider_error' };
 
+export async function sendDirectSmsMessage(phoneNumber: string, message: string): Promise<SendSmsCodeResult> {
+  if (!hasSmsWapiConfig()) {
+    throw new Error('Trimiterea SMS personalizat necesită configurare SMSWapi.');
+  }
+
+  const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+  const params = new URLSearchParams({
+    secret: getSmsWapiApiSecret(),
+    phone: formattedPhone,
+    message,
+    mode: process.env.SMSWAPI_MODE || process.env.SMSWAPY_MODE || 'credits',
+    priority: '1',
+  });
+
+  const gateway = process.env.SMSWAPI_GATEWAY || process.env.SMSWAPY_GATEWAY;
+  const device = process.env.SMSWAPI_DEVICE || process.env.SMSWAPY_DEVICE;
+  const sim = process.env.SMSWAPI_SIM || process.env.SMSWAPY_SIM;
+
+  if (gateway) {
+    params.set('gateway', gateway);
+  }
+
+  if (device) {
+    params.set('device', device);
+  }
+
+  if (sim) {
+    params.set('sim', sim);
+  }
+
+  const response = await fetch(`${getSmsWapiBaseUrl()}/send/sms`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params,
+    cache: 'no-store',
+  });
+
+  const data = await parseJsonSafely(response);
+  if (!response.ok || !isSmsWapiSuccess(data)) {
+    throw new Error(getSmsWapiMessage(data) || 'Nu am putut trimite SMS-ul.');
+  }
+
+  return {
+    provider: 'smswapi',
+    eventId: getSmsWapiEventId(data),
+  };
+}
+
 export async function sendVolunteerPortalSmsCode(phoneNumber: string): Promise<SendSmsCodeResult> {
   if (hasSmsWapiConfig()) {
     return sendVolunteerPortalSmsCodeViaSmsWapi(phoneNumber);

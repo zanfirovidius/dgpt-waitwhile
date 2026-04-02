@@ -1,6 +1,8 @@
 'use client';
 
 import { createProject } from '@/app/actions/projects';
+import { ProjectStatusSwitch } from '@/components/projects/ProjectStatusSwitch';
+import { getProjectStatusLabel, type ProjectStatus } from '@/lib/project-status';
 import LocationSelector from '@/components/LocationSelector';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -13,6 +15,7 @@ export default function NewProjectPage() {
   const [endDate, setEndDate] = useState('');
   const [locationId, setLocationId] = useState('');
   const [locationName, setLocationName] = useState('');
+  const [projectStatus, setProjectStatus] = useState<ProjectStatus>('draft');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -42,7 +45,7 @@ export default function NewProjectPage() {
     setIsSubmitting(true);
     setError('');
 
-    const res = await createProject({ name, locationId, locationName, startDate, endDate });
+    const res = await createProject({ name, locationId, locationName, startDate, endDate, projectStatus });
     if (res.success && res.projectId) {
       router.push(`/projects/${res.projectId}`);
     } else {
@@ -121,6 +124,16 @@ export default function NewProjectPage() {
             onChange={(locId, locations) => handleLocationChange(locId, locations)}
             onLocationsLoaded={handleLocationsLoaded}
           />
+
+          <div className="form-control gap-3">
+            <label className="label">
+              <span className="label-text font-medium">Project status</span>
+            </label>
+            <ProjectStatusSwitch value={projectStatus} onChange={setProjectStatus} disabled={isSubmitting} />
+            <p className="text-xs text-base-content/50">
+              Proiectul va fi creat în starea <span className="font-semibold">{getProjectStatusLabel(projectStatus)}</span>.
+            </p>
+          </div>
 
           <div className="pt-2 flex gap-3">
             <button

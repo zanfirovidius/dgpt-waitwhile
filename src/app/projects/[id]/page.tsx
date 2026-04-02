@@ -3,10 +3,13 @@
 import { AttendanceConfig, getProjectAttendanceConfig } from '@/app/actions/attendance-config';
 import { FeedbackConfig, getProjectFeedbackConfig } from '@/app/actions/feedback-config';
 import { deleteProject, getProject, Project, updateProject } from '@/app/actions/projects';
+import { ProjectStatusSwitch } from '@/components/projects/ProjectStatusSwitch';
+import { getProjectStatusBadgeClass, getProjectStatusLabel, normalizeProjectStatus } from '@/lib/project-status';
 import { sendVolunteerPortalTestSms } from '@/app/actions/volunteer-portal';
 import { formatProjectDateRange } from '@/lib/project-dates';
 import {
   AlertCircle, ArrowLeft,
+  BarChart3,
   Clock,
   Edit2,
   ExternalLink,
@@ -14,6 +17,7 @@ import {
   ShieldCheck,
   MapPin, MessageSquare,
   Save,
+  Stethoscope,
   Smartphone,
   Trash2,
   Users,
@@ -279,6 +283,18 @@ export default function ProjectDetailPage() {
                     />
                 </div>
 
+                <div className="form-control gap-3">
+                    <label className="label"><span className="label-text font-bold">Status proiect</span></label>
+                    <ProjectStatusSwitch
+                      value={normalizeProjectStatus(editData.projectStatus as string | undefined)}
+                      onChange={(value) => setEditData({ ...editData, projectStatus: value })}
+                      disabled={isSaving}
+                    />
+                    <label className="label">
+                      <span className="label-text-alt text-base-content/50">Controlează explicit dacă proiectul este în draft, activ sau încheiat.</span>
+                    </label>
+                </div>
+
                 <div className="divider opacity-50 text-[10px] uppercase font-bold tracking-widest">Metadate Eveniment (Formular Public)</div>
 
                 <div className="form-control">
@@ -422,14 +438,23 @@ export default function ProjectDetailPage() {
                     <h2 className="text-2xl font-extrabold tracking-tight text-base-content">{project.name}</h2>
                     <p className="text-sm text-primary font-medium mt-1 capitalize">{formattedDate}</p>
                 </div>
-                <div className="badge badge-outline badge-lg shrink-0 gap-1.5 py-3">
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <div className={`badge badge-lg gap-1.5 py-3 ${getProjectStatusBadgeClass(project.projectStatus)}`}>
+                    {getProjectStatusLabel(project.projectStatus)}
+                  </div>
+                  <div className="badge badge-outline badge-lg gap-1.5 py-3">
                     <MapPin size={14} className="text-primary" /> {project.locationName}
+                  </div>
                 </div>
                 </div>
 
                 <div className="divider"></div>
 
-                <div className="grid grid-cols-2 gap-x-12 gap-y-4 mb-8 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-12 gap-y-4 mb-8 text-sm">
+                   <div>
+                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Status Proiect</span>
+                       <span className="font-medium">{getProjectStatusLabel(project.projectStatus)}</span>
+                   </div>
                    <div>
                        <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Nume Eveniment</span>
                        <span className="font-medium">{project.eventName || '-'}</span>
@@ -573,6 +598,50 @@ export default function ProjectDetailPage() {
                       className="btn btn-accent btn-sm gap-2"
                     >
                       Gestionează Instructajul
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="bg-secondary/5 rounded-2xl p-6 border border-secondary/10 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center text-secondary">
+                        <Stethoscope size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base-content">Cabinete Medicale & Program</h3>
+                        <p className="text-xs text-base-content/50">
+                          Structură pe cabinete, materiale și asignări pe zile și intervale
+                        </p>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/projects/${project.$id}/cabinets`}
+                      className="btn btn-secondary btn-sm gap-2"
+                    >
+                      Gestionează Cabinetele
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="bg-warning/5 rounded-2xl p-6 border border-warning/10 mt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center text-warning">
+                        <BarChart3 size={20} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-base-content">Occupancy Waitwhile</h3>
+                        <p className="text-xs text-base-content/50">
+                          Grad de ocupare preconfigurat pe locația și perioada proiectului
+                        </p>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/projects/${project.$id}/occupancy`}
+                      className="btn btn-warning btn-sm gap-2"
+                    >
+                      Vezi Occupancy
                     </Link>
                   </div>
                 </div>

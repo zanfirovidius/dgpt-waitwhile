@@ -450,3 +450,5 @@ function isBillingBlocked(message: string) {
 }
 
 setupVolunteersSchema();
+
+export {};

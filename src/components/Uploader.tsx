@@ -1,9 +1,9 @@
 'use client';
 
 import { ExtendedUser } from '@/app/page';
-import { AlertCircle, FileSpreadsheet, UploadCloud } from 'lucide-react';
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
+import { FileDropzone } from '@/components/FileDropzone';
 
 interface UploaderProps {
   onUsersParsed: (users: ExtendedUser[]) => void;
@@ -13,7 +13,6 @@ interface UploaderProps {
 }
 
 export default function Uploader({ onUsersParsed, selectedLocation, emailDomain, defaultRole }: UploaderProps) {
-  const [isDragActive, setIsDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleFileUpload = (file: File) => {
@@ -30,8 +29,8 @@ export default function Uploader({ onUsersParsed, selectedLocation, emailDomain,
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        
-        const jsonData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+
+        const jsonData = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(worksheet, { header: 1 });
         
         if (jsonData.length < 5) {
           throw new Error('Excel file must have at least 5 rows (including headers).');
@@ -39,10 +38,10 @@ export default function Uploader({ onUsersParsed, selectedLocation, emailDomain,
 
         // According to the legacy script, row 5 (index 4) contains headers
         const headerRow = jsonData[4] || [];
-        const nameIndex = headerRow.findIndex((h: any) => h && h.toString().toLowerCase().includes('name'));
-        const phoneIndex = headerRow.findIndex((h: any) => h && h.toString().toLowerCase().includes('phone'));
-        const roleIndex = headerRow.findIndex((h: any) => 
-          h && (h.toString().toLowerCase().includes('role') || h.toString().toLowerCase().includes('type') || h.toString().toLowerCase().includes('account'))
+        const nameIndex = headerRow.findIndex((header) => header && String(header).toLowerCase().includes('name'));
+        const phoneIndex = headerRow.findIndex((header) => header && String(header).toLowerCase().includes('phone'));
+        const roleIndex = headerRow.findIndex((header) =>
+          header && (String(header).toLowerCase().includes('role') || String(header).toLowerCase().includes('type') || String(header).toLowerCase().includes('account'))
         );
 
         if (nameIndex === -1 || phoneIndex === -1) {
@@ -84,65 +83,22 @@ export default function Uploader({ onUsersParsed, selectedLocation, emailDomain,
 
         onUsersParsed(parsedUsers);
 
-      } catch (err: any) {
-        setError(err.message || 'Error parsing Excel file.');
+      } catch (error: unknown) {
+        setError(error instanceof Error ? error.message : 'Error parsing Excel file.');
       }
     };
     reader.readAsArrayBuffer(file);
   };
 
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragActive(true);
-  };
-
-  const onDragLeave = () => {
-    setIsDragActive(false);
-  };
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFileUpload(e.dataTransfer.files[0]);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-4">
-      <div 
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        className={`border-2 border-dashed rounded-2xl p-8 text-center transition-colors cursor-pointer group hover:border-primary hover:bg-base-200/50 ${isDragActive ? 'border-primary bg-primary/10' : 'border-base-300'}`}
-        onClick={() => document.getElementById('file-upload')?.click()}
-      >
-        <UploadCloud className={`mx-auto mb-4 transition-colors ${isDragActive ? 'text-primary' : 'text-base-content/40 group-hover:text-primary'}`} size={48} />
-        <h3 className="font-bold text-lg mb-1">Click or drag Excel file here</h3>
-        <p className="text-sm text-base-content/60 flex items-center justify-center gap-1">
-          <FileSpreadsheet size={14} /> Supports .xlsx, .xls
-        </p>
-        <input 
-          id="file-upload" 
-          type="file" 
-          accept=".xlsx, .xls" 
-          className="hidden" 
-          onChange={(e) => {
-            if (e.target.files && e.target.files.length > 0) {
-              handleFileUpload(e.target.files[0]);
-              // Reset so same file can be uploaded again if needed
-              e.target.value = '';
-            }
-          }}
-        />
-      </div>
-
-      {error && (
-        <div className="alert alert-error text-sm py-2 rounded-xl">
-          <AlertCircle size={16} />
-          <span>{error}</span>
-        </div>
-      )}
+      <FileDropzone
+        accept=".xlsx,.xls"
+        title="Click or drag Excel file here"
+        subtitle="Supports .xlsx, .xls"
+        error={error}
+        onFileSelected={(file) => handleFileUpload(file)}
+      />
     </div>
   );
 }

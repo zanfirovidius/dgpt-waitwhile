@@ -4,6 +4,7 @@
 import { ID, Query } from 'node-appwrite';
 import { createAdminClient, createSessionClient } from '../../lib/appwrite-server';
 import { normalizeProjectDates } from '@/lib/project-dates';
+import { normalizeProjectStatus, type ProjectStatus } from '@/lib/project-status';
 import { normalizeToSlug, ensureUniqueProjectSlug } from '@/lib/slug';
 import { getPlatformSettings } from './platform';
 import {
@@ -39,6 +40,7 @@ export interface Project {
   date: string;
   startDate: string;
   endDate: string;
+  projectStatus?: ProjectStatus;
   projectSlug?: string;
   publicFeedbackFormStatus?: string;
   eventName?: string;
@@ -72,6 +74,7 @@ export async function createProject(data: {
   locationName: string;
   startDate: string;
   endDate: string;
+  projectStatus?: ProjectStatus;
 }): Promise<{ success: boolean; projectId?: string; error?: string }> {
   if (data.endDate < data.startDate) {
     return { success: false, error: 'End date must be on or after the start date' };
@@ -97,6 +100,7 @@ export async function createProject(data: {
     const projectDoc = await databases.createDocument(DATABASE_ID, PROJECTS_COLLECTION_ID, ID.unique(), {
       ...data,
       date: data.startDate,
+      projectStatus: normalizeProjectStatus(data.projectStatus),
       projectSlug: uniqueSlug,
       // Metadata for setup
       eventName: data.name,
@@ -204,6 +208,7 @@ export async function getProjects(): Promise<{ success: boolean; data?: Project[
         startDate: normalized.startDate,
         endDate: normalized.endDate,
         date: normalized.date,
+        projectStatus: normalizeProjectStatus((normalized.projectStatus as string | undefined) || undefined),
         projectSlug: normalized.projectSlug,
         publicFeedbackFormStatus: normalized.publicFeedbackFormStatus,
         eventName: normalized.eventName,
@@ -244,6 +249,7 @@ export async function getProject(id: string): Promise<{ success: boolean; data?:
       startDate: normalized.startDate,
       endDate: normalized.endDate,
       date: normalized.date,
+      projectStatus: normalizeProjectStatus((normalized.projectStatus as string | undefined) || undefined),
       projectSlug: normalized.projectSlug,
       publicFeedbackFormStatus: normalized.publicFeedbackFormStatus,
       eventName: normalized.eventName,
@@ -299,6 +305,10 @@ export async function updateProject(id: string, data: Partial<Project>): Promise
 
     if (cleanData.startDate !== undefined) {
       cleanData.date = cleanData.startDate;
+    }
+
+    if (cleanData.projectStatus !== undefined) {
+      cleanData.projectStatus = normalizeProjectStatus(String(cleanData.projectStatus));
     }
 
     if (Object.keys(cleanData).length > 0) {
@@ -373,6 +383,7 @@ export async function getProjectBySlug(
         startDate: normalized.startDate,
         endDate: normalized.endDate,
         date: normalized.date,
+        projectStatus: normalizeProjectStatus((normalized.projectStatus as string | undefined) || undefined),
         projectSlug: normalized.projectSlug,
         publicFeedbackFormStatus: normalized.publicFeedbackFormStatus,
         eventName: normalized.eventName,
@@ -405,7 +416,7 @@ async function ensureProjectMetadataAttributes(
 ) {
   const res = await databases.listAttributes(DATABASE_ID, PROJECTS_COLLECTION_ID);
   const existing = new Map(res.attributes.map((attribute) => [attribute.key, attribute]));
-  const requiredKeys = ['startDate', 'endDate', 'projectSlug', 'publicFeedbackFormStatus', 'eventName', 'city', 'venue'];
+  const requiredKeys = ['startDate', 'endDate', 'projectSlug', 'projectStatus', 'publicFeedbackFormStatus', 'eventName', 'city', 'venue'];
 
   for (const key of requiredKeys) {
     if (existing.has(key)) {
@@ -413,7 +424,16 @@ async function ensureProjectMetadataAttributes(
     }
 
     // Default sizes
-    const size = (key === 'projectSlug' || key === 'publicFeedbackFormStatus' || key === 'eventName' || key === 'city' || key === 'venue') ? 255 : 10;
+    const size =
+      key === 'projectSlug' ||
+      key === 'publicFeedbackFormStatus' ||
+      key === 'eventName' ||
+      key === 'city' ||
+      key === 'venue'
+        ? 255
+        : key === 'projectStatus'
+          ? 16
+          : 10;
     await databases.createStringAttribute(DATABASE_ID, PROJECTS_COLLECTION_ID, key, size, false);
   }
 

@@ -10,7 +10,10 @@
     "deploy:fly": "bash scripts/deploy-fly.sh",
     "setup:volunteers-schema": "npx ts-node scripts/setup-volunteers-schema.ts",
     "setup:training-schema": "npx ts-node scripts/setup-training-schema.ts",
-    "setup:incidents-schema": "npx ts-node scripts/setup-incidents-schema.ts"
+    "setup:incidents-schema": "npx ts-node scripts/setup-incidents-schema.ts",
+    "setup:doctors-schema": "npx ts-node scripts/setup-doctors-schema.ts",
+    "setup:cabinets-schema": "npx ts-node scripts/setup-cabinets-schema.ts",
+    "setup:platform-templates-schema": "npx ts-node scripts/setup-platform-templates-schema.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
