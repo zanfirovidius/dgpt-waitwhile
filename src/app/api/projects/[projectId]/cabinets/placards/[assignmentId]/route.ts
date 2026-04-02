@@ -33,7 +33,9 @@ export async function GET(_request: Request, context: RouteContext) {
       resolveCabinetPlacardTemplate(databases, storage, projectId),
     ]);
 
-    const packet = packets.find((item) => item.assignmentId === assignmentId);
+    const packet = packets.find(
+      (item) => item.assignmentId === assignmentId || item.assignmentIds.includes(assignmentId),
+    );
     if (!packet) {
       return new Response('Nu am găsit alocarea selectată în programul zilei.', { status: 404 });
     }

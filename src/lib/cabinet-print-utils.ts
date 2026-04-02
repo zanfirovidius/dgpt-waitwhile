@@ -3,10 +3,13 @@ import { ro } from 'date-fns/locale';
 import { normalizeName } from '@/lib/name-utils';
 import type {
   CabinetDailyPacket,
+  CabinetPacketRoleAssignment,
   CabinetMaterialItem,
+  CabinetAssigneeType,
   ProjectCabinet,
   ProjectCabinetAssignment,
 } from '@/lib/cabinet-types';
+import { getCabinetAssigneeTypeLabel } from '@/lib/cabinet-utils';
 import type { DoctorRecord } from '@/lib/doctor-types';
 
 type ProjectPrintContext = {
@@ -36,16 +39,61 @@ export function buildCabinetDailyPackets(args: {
 }) {
   const cabinetsById = new Map(args.cabinets.map((cabinet) => [cabinet.$id || '', cabinet]));
   const doctorsById = new Map((args.doctors || []).map((doctor) => [doctor.$id || '', doctor]));
+  const groupedAssignments = new Map<string, ProjectCabinetAssignment[]>();
 
-  return args.assignments.map((assignment) => {
+  for (const assignment of args.assignments) {
+    const groupKey = [
+      assignment.cabinetId,
+      assignment.assignmentDate,
+      assignment.startTime,
+      assignment.endTime,
+    ].join('|');
+
+    const current = groupedAssignments.get(groupKey) || [];
+    current.push(assignment);
+    groupedAssignments.set(groupKey, current);
+  }
+
+  return [...groupedAssignments.values()].map((group) => {
+    const assignment = [...group].sort(compareCabinetAssignmentsByRole)[0];
     const cabinet = cabinetsById.get(assignment.cabinetId);
-    const doctor = assignment.doctorId ? doctorsById.get(assignment.doctorId) : undefined;
-    const materials = mergeCabinetMaterials(cabinet?.materials, assignment.materials);
+    const disciplineAssignments = group.filter((item) => item.assigneeType === 'discipline');
+    const staffAssignments = group.filter((item) => item.assigneeType !== 'discipline');
+    const roleAssignments = staffAssignments
+      .map((groupedAssignment) => {
+        const doctor = groupedAssignment.doctorId ? doctorsById.get(groupedAssignment.doctorId) : undefined;
+        return {
+          assignmentId: groupedAssignment.$id || '',
+          assigneeType: groupedAssignment.assigneeType,
+          roleLabel: getCabinetAssigneeTypeLabel(groupedAssignment.assigneeType),
+          assigneeName: getCabinetAssigneeName(groupedAssignment, doctor),
+          assigneeDisplayName: getCabinetAssigneeDisplayName(groupedAssignment, doctor),
+          doctorId: groupedAssignment.doctorId || '',
+          volunteerId: groupedAssignment.volunteerId || '',
+          volunteerCategory: groupedAssignment.volunteerCategory || '',
+        } satisfies CabinetPacketRoleAssignment;
+      })
+      .sort(compareCabinetRoleAssignments);
+
+    const primaryRole = roleAssignments[0];
+    const materials = mergeCabinetMaterials(
+      cabinet?.materials,
+      disciplineAssignments.length > 0
+        ? disciplineAssignments.flatMap((item) => item.materials || [])
+        : group.flatMap((item) => item.materials || []),
+    );
     const readyMaterialsCount = materials.filter((item) => item.checked).length;
     const totalMaterialsCount = materials.length;
+    const notes = [...new Set(group.map((item) => (item.notes || '').trim()).filter(Boolean))].join(' · ');
+    const specialty =
+      disciplineAssignments[0]?.cabinetSpecialty ||
+      group.find((item) => item.cabinetSpecialty)?.cabinetSpecialty ||
+      cabinet?.specialty ||
+      '';
 
     return {
-      assignmentId: assignment.$id || '',
+      assignmentId: primaryRole?.assignmentId || disciplineAssignments[0]?.$id || assignment.$id || '',
+      assignmentIds: group.map((item) => item.$id || '').filter(Boolean),
       projectId: assignment.projectId,
       assignmentDate: assignment.assignmentDate,
       startTime: assignment.startTime,
@@ -55,12 +103,13 @@ export function buildCabinetDailyPackets(args: {
       cabinetName: cabinet?.name || assignment.cabinetName || '',
       cabinetIdentifier: cabinet?.identifier || assignment.cabinetIdentifier || '',
       cabinetLabel: formatCabinetLabel(cabinet?.name || assignment.cabinetName),
-      specialty: assignment.cabinetSpecialty || cabinet?.specialty || '',
+      specialty,
       ultrasoundAvailable: Boolean(cabinet?.ultrasoundAvailable),
-      assigneeType: assignment.assigneeType,
-      assigneeName: getCabinetAssigneeName(assignment, doctor),
-      assigneeDisplayName: getCabinetAssigneeDisplayName(assignment, doctor),
-      notes: assignment.notes || '',
+      assigneeType: primaryRole?.assigneeType || (disciplineAssignments.length > 0 ? 'discipline' : 'unassigned'),
+      assigneeName: primaryRole?.assigneeName || '',
+      assigneeDisplayName: primaryRole?.assigneeDisplayName || 'NEASIGNAT',
+      roleAssignments,
+      notes,
       materials,
       readyMaterialsCount,
       totalMaterialsCount,
@@ -105,11 +154,19 @@ export function formatCabinetLabel(value?: string | null) {
 }
 
 export function getCabinetAssigneeName(
-  assignment: Pick<ProjectCabinetAssignment, 'assigneeType' | 'doctorName' | 'responsibleName'>,
+  assignment: Pick<ProjectCabinetAssignment, 'assigneeType' | 'cabinetSpecialty' | 'doctorName' | 'volunteerName' | 'responsibleName'>,
   doctor?: Pick<DoctorRecord, 'fullName'> | null,
 ) {
+  if (assignment.assigneeType === 'discipline') {
+    return (assignment.cabinetSpecialty || '').trim();
+  }
+
   if (assignment.assigneeType === 'doctor') {
     return (doctor?.fullName || assignment.doctorName || '').trim();
+  }
+
+  if (assignment.assigneeType === 'assistant' || assignment.assigneeType === 'cabinet-chief') {
+    return (assignment.volunteerName || '').trim();
   }
 
   if (assignment.assigneeType === 'responsible') {
@@ -120,9 +177,13 @@ export function getCabinetAssigneeName(
 }
 
 export function getCabinetAssigneeDisplayName(
-  assignment: Pick<ProjectCabinetAssignment, 'assigneeType' | 'doctorName' | 'responsibleName'>,
+  assignment: Pick<ProjectCabinetAssignment, 'assigneeType' | 'cabinetSpecialty' | 'doctorName' | 'volunteerName' | 'responsibleName'>,
   doctor?: Pick<DoctorRecord, 'fullName' | 'professionalGrade'> | null,
 ) {
+  if (assignment.assigneeType === 'discipline') {
+    return (assignment.cabinetSpecialty || '').trim() || 'DISCIPLINĂ NEASIGNATĂ';
+  }
+
   if (assignment.assigneeType === 'doctor') {
     const fullName = (doctor?.fullName || assignment.doctorName || '').trim();
     const grade = (doctor?.professionalGrade || '').trim();
@@ -144,11 +205,31 @@ export function getCabinetAssigneeDisplayName(
     return `${grade} ${fullName}`.trim();
   }
 
+  if (assignment.assigneeType === 'assistant') {
+    return (assignment.volunteerName || '').trim() || 'ASISTENT NEASIGNAT';
+  }
+
+  if (assignment.assigneeType === 'cabinet-chief') {
+    return (assignment.volunteerName || '').trim() || 'ȘEF CABINET NEASIGNAT';
+  }
+
   if (assignment.assigneeType === 'responsible') {
     return (assignment.responsibleName || '').trim() || 'RESPONSABIL NEASIGNAT';
   }
 
   return 'NEASIGNAT';
+}
+
+export function buildCabinetRoleSummaryLines(roleAssignments: CabinetPacketRoleAssignment[]) {
+  const meaningfulAssignments = roleAssignments.filter(
+    (role) => role.assigneeType !== 'unassigned' && role.assigneeType !== 'discipline',
+  );
+
+  if (meaningfulAssignments.length === 0) {
+    return ['Neasignat'];
+  }
+
+  return meaningfulAssignments.map((role) => `${role.roleLabel}: ${role.assigneeDisplayName}`);
 }
 
 export function buildCabinetTemplatePlaceholders(
@@ -211,4 +292,37 @@ function parseProjectDay(value?: string | null) {
 
   const parsed = parseISO(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function compareCabinetAssignmentsByRole(left: ProjectCabinetAssignment, right: ProjectCabinetAssignment) {
+  return getCabinetRolePriority(left.assigneeType) - getCabinetRolePriority(right.assigneeType);
+}
+
+function compareCabinetRoleAssignments(
+  left: CabinetPacketRoleAssignment,
+  right: CabinetPacketRoleAssignment,
+) {
+  const roleDiff = getCabinetRolePriority(left.assigneeType) - getCabinetRolePriority(right.assigneeType);
+  if (roleDiff !== 0) {
+    return roleDiff;
+  }
+
+  return left.assigneeDisplayName.localeCompare(right.assigneeDisplayName, 'ro');
+}
+
+function getCabinetRolePriority(value?: CabinetAssigneeType) {
+  switch (value) {
+    case 'discipline':
+      return 4;
+    case 'doctor':
+      return 0;
+    case 'cabinet-chief':
+      return 1;
+    case 'assistant':
+      return 2;
+    case 'responsible':
+      return 3;
+    default:
+      return 5;
+  }
 }

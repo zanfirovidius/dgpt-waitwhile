@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { getProject, Project } from '@/app/actions/projects';
+import { getProjectVolunteers, type ProjectVolunteer } from '@/app/actions/volunteers';
 import {
   createProjectCabinet,
   deleteProjectCabinet,
@@ -47,6 +48,7 @@ import type {
   CabinetFormInput,
   CabinetMaterialItem,
   CabinetPrintTemplateRecord,
+  CabinetSpecialtyScheduleSlot,
   ProjectCabinet,
   ProjectCabinetAssignment,
 } from '@/lib/cabinet-types';
@@ -55,8 +57,13 @@ import { getDoctorSpecialtyOptions } from '@/lib/doctor-defaults';
 import type { PlatformTemplateRecord } from '@/lib/platform-template-types';
 import {
   buildCabinetDailyPackets,
+  buildCabinetRoleSummaryLines,
   getCabinetPrintTemplateSourceLabel,
 } from '@/lib/cabinet-print-utils';
+import {
+  getCabinetAssigneeTypeLabel,
+  getCabinetAssignmentAssigneeName,
+} from '@/lib/cabinet-utils';
 
 type FlashMessage = {
   type: 'success' | 'error';
@@ -92,6 +99,19 @@ function createEmptyCabinetForm(projectId = ''): CabinetFormInput {
     specialty: '',
     ultrasoundAvailable: false,
     materials: [],
+    specialtySchedule: [],
+    notes: '',
+  };
+}
+
+function createScheduleSlot(assignmentDate = ''): CabinetSpecialtyScheduleSlot {
+  return {
+    assignmentId: '',
+    assignmentDate,
+    startTime: '',
+    endTime: '',
+    specialty: '',
+    materials: [],
     notes: '',
   };
 }
@@ -105,8 +125,9 @@ function createEmptyAssignmentForm(projectId = '', assignmentDate = ''): Cabinet
     assignmentDate,
     startTime: '',
     endTime: '',
-    assigneeType: 'unassigned',
+    assigneeType: 'doctor',
     doctorId: '',
+    volunteerId: '',
     responsibleName: '',
     notes: '',
   };
@@ -131,16 +152,11 @@ function buildProjectDayOptions(project?: Project | null) {
   }));
 }
 
-function getAssignmentAssigneeLabel(assignment: ProjectCabinetAssignment) {
-  if (assignment.assigneeType === 'doctor') {
-    return assignment.doctorName || 'Medic neselectat';
-  }
-
-  if (assignment.assigneeType === 'responsible') {
-    return assignment.responsibleName || 'Responsabil nedefinit';
-  }
-
-  return 'Neasignat';
+function getVolunteerDisplayName(volunteer?: Pick<ProjectVolunteer, 'firstName' | 'lastName'> | null) {
+  return [volunteer?.firstName || '', volunteer?.lastName || '']
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export default function ProjectCabinetsPage() {
@@ -150,6 +166,7 @@ export default function ProjectCabinetsPage() {
   const [loading, setLoading] = useState(true);
   const [project, setProject] = useState<Project | null>(null);
   const [doctors, setDoctors] = useState<DoctorRecord[]>([]);
+  const [projectVolunteers, setProjectVolunteers] = useState<ProjectVolunteer[]>([]);
   const [cabinets, setCabinets] = useState<ProjectCabinet[]>([]);
   const [assignments, setAssignments] = useState<ProjectCabinetAssignment[]>([]);
   const [selectedDay, setSelectedDay] = useState('');
@@ -164,6 +181,7 @@ export default function ProjectCabinetsPage() {
   const [assignmentForm, setAssignmentForm] = useState<CabinetAssignmentFormInput>(
     createEmptyAssignmentForm(projectId, ''),
   );
+  const [selectedHumanSlotId, setSelectedHumanSlotId] = useState('');
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
   const [deletingAssignmentId, setDeletingAssignmentId] = useState<string | null>(null);
 
@@ -179,6 +197,8 @@ export default function ProjectCabinetsPage() {
   const [templateActionScope, setTemplateActionScope] = useState<TemplateScope | null>(null);
   const [selectedLibraryTemplateId, setSelectedLibraryTemplateId] = useState('');
   const projectTemplateInputRef = useRef<HTMLInputElement | null>(null);
+  const cabinetFormCardRef = useRef<HTMLDivElement | null>(null);
+  const cabinetNameInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadDoctors = useCallback(async () => {
     const doctorsResult = await getDoctorsRegistry();
@@ -205,9 +225,18 @@ export default function ProjectCabinetsPage() {
     setLoading(true);
 
     try {
-      const [projectResult, doctorsResult, cabinetsResult, assignmentsResult, templateResult, libraryResult] = await Promise.all([
+      const [
+        projectResult,
+        doctorsResult,
+        volunteersResult,
+        cabinetsResult,
+        assignmentsResult,
+        templateResult,
+        libraryResult,
+      ] = await Promise.all([
         getProject(projectId),
         getDoctorsRegistry(),
+        getProjectVolunteers(projectId, { limit: 1000 }),
         getProjectCabinets(projectId),
         getProjectCabinetAssignments(projectId),
         getCabinetPrintTemplateState(projectId),
@@ -220,6 +249,10 @@ export default function ProjectCabinetsPage() {
 
       if (!doctorsResult.success) {
         throw new Error(doctorsResult.error || 'Nu am putut încărca medicii.');
+      }
+
+      if (!volunteersResult.success || !volunteersResult.data) {
+        throw new Error(volunteersResult.error || 'Nu am putut încărca voluntarii proiectului.');
       }
 
       if (!cabinetsResult.success) {
@@ -236,6 +269,7 @@ export default function ProjectCabinetsPage() {
 
       setProject(projectResult.data);
       setDoctors(doctorsResult.data);
+      setProjectVolunteers(volunteersResult.data);
       setCabinets(cabinetsResult.data);
       setAssignments(assignmentsResult.data);
       setTemplateState(templateResult.data);
@@ -253,6 +287,7 @@ export default function ProjectCabinetsPage() {
       setSelectedDay((current) => (current && dayOptions.some((day) => day.value === current) ? current : nextDay));
       setCabinetForm(createEmptyCabinetForm(projectId));
       setAssignmentForm(createEmptyAssignmentForm(projectId, nextDay));
+      setSelectedHumanSlotId('');
     } catch (error: unknown) {
       setMessage({
         type: 'error',
@@ -276,8 +311,33 @@ export default function ProjectCabinetsPage() {
       ...current,
       projectId,
       assignmentDate: selectedDay,
+      startTime: '',
+      endTime: '',
+      cabinetSpecialty: '',
+      materials: [],
     }));
+    setSelectedHumanSlotId('');
   }, [editingAssignmentId, projectId, selectedDay]);
+
+  useEffect(() => {
+    if (!editingCabinetId) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      cabinetFormCardRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+
+      window.requestAnimationFrame(() => {
+        cabinetNameInputRef.current?.focus();
+        cabinetNameInputRef.current?.select();
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [editingCabinetId]);
 
   const dayOptions = useMemo(() => buildProjectDayOptions(project), [project]);
 
@@ -289,15 +349,73 @@ export default function ProjectCabinetsPage() {
     [doctors],
   );
 
-  const selectedDayAssignments = useMemo(
+  const activeProjectVolunteers = useMemo(
+    () =>
+      projectVolunteers
+        .filter((volunteer) => volunteer.status !== 'archived')
+        .sort((left, right) =>
+          getVolunteerDisplayName(left).localeCompare(getVolunteerDisplayName(right), 'ro'),
+        ),
+    [projectVolunteers],
+  );
+
+  const disciplineAssignments = useMemo(
     () =>
       assignments
+        .filter((assignment) => assignment.assigneeType === 'discipline')
+        .sort((left, right) =>
+          left.assignmentDate === right.assignmentDate
+            ? left.startTime === right.startTime
+              ? left.cabinetIdentifier.localeCompare(right.cabinetIdentifier, 'ro')
+              : left.startTime.localeCompare(right.startTime, 'ro')
+            : left.assignmentDate.localeCompare(right.assignmentDate, 'ro'),
+        ),
+    [assignments],
+  );
+
+  const humanAssignments = useMemo(
+    () => assignments.filter((assignment) => assignment.assigneeType !== 'discipline'),
+    [assignments],
+  );
+
+  const disciplineAssignmentsBySlot = useMemo(() => {
+    const map = new Map<string, ProjectCabinetAssignment>();
+
+    for (const assignment of disciplineAssignments) {
+      map.set(
+        `${assignment.cabinetId}|${assignment.assignmentDate}|${assignment.startTime}|${assignment.endTime}`,
+        assignment,
+      );
+    }
+
+    return map;
+  }, [disciplineAssignments]);
+
+  const selectedDayDisciplineAssignments = useMemo(
+    () => disciplineAssignments.filter((assignment) => assignment.assignmentDate === selectedDay),
+    [disciplineAssignments, selectedDay],
+  );
+
+  const selectedDayAssignments = useMemo(
+    () =>
+      humanAssignments
         .filter((assignment) => assignment.assignmentDate === selectedDay)
         .sort((left, right) =>
           left.startTime === right.startTime
-            ? left.cabinetIdentifier.localeCompare(right.cabinetIdentifier, 'ro')
+            ? left.cabinetIdentifier === right.cabinetIdentifier
+              ? getCabinetAssigneeTypeLabel(left.assigneeType).localeCompare(
+                  getCabinetAssigneeTypeLabel(right.assigneeType),
+                  'ro',
+                )
+              : left.cabinetIdentifier.localeCompare(right.cabinetIdentifier, 'ro')
             : left.startTime.localeCompare(right.startTime, 'ro'),
         ),
+    [humanAssignments, selectedDay],
+  );
+
+  const selectedDayAllAssignments = useMemo(
+    () =>
+      assignments.filter((assignment) => assignment.assignmentDate === selectedDay),
     [assignments, selectedDay],
   );
 
@@ -306,38 +424,74 @@ export default function ProjectCabinetsPage() {
     [assignmentForm.doctorId, doctors],
   );
 
+  const selectedAssignmentVolunteer = useMemo(
+    () => projectVolunteers.find((volunteer) => volunteer.$id === assignmentForm.volunteerId) || null,
+    [assignmentForm.volunteerId, projectVolunteers],
+  );
+
   const selectedAssignmentCabinet = useMemo(
     () => cabinets.find((cabinet) => cabinet.$id === assignmentForm.cabinetId) || null,
     [assignmentForm.cabinetId, cabinets],
   );
 
+  const selectedCabinetDisciplineSlots = useMemo(
+    () =>
+      selectedDayDisciplineAssignments
+        .filter((assignment) => assignment.cabinetId === assignmentForm.cabinetId)
+        .sort((left, right) =>
+          left.startTime === right.startTime
+            ? left.endTime.localeCompare(right.endTime, 'ro')
+            : left.startTime.localeCompare(right.startTime, 'ro'),
+        ),
+    [assignmentForm.cabinetId, selectedDayDisciplineAssignments],
+  );
+
+  const selectedHumanSlot = useMemo(
+    () =>
+      selectedCabinetDisciplineSlots.find((assignment) => assignment.$id === selectedHumanSlotId) || null,
+    [selectedCabinetDisciplineSlots, selectedHumanSlotId],
+  );
+
   const assignmentCountByCabinetId = useMemo(() => {
     const counts = new Map<string, number>();
 
-    for (const assignment of assignments) {
+    for (const assignment of humanAssignments) {
       counts.set(assignment.cabinetId, (counts.get(assignment.cabinetId) || 0) + 1);
     }
 
     return counts;
-  }, [assignments]);
+  }, [humanAssignments]);
+
+  const specialtySlotCountByCabinetId = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const assignment of disciplineAssignments) {
+      counts.set(assignment.cabinetId, (counts.get(assignment.cabinetId) || 0) + 1);
+    }
+
+    return counts;
+  }, [disciplineAssignments]);
 
   const selectedDayStats = useMemo(() => {
     const total = selectedDayAssignments.length;
+    const disciplineAssigned = selectedDayDisciplineAssignments.length;
     const doctorAssigned = selectedDayAssignments.filter((assignment) => assignment.assigneeType === 'doctor').length;
+    const assistantAssigned = selectedDayAssignments.filter((assignment) => assignment.assigneeType === 'assistant').length;
+    const cabinetChiefAssigned = selectedDayAssignments.filter((assignment) => assignment.assigneeType === 'cabinet-chief').length;
     const responsibleAssigned = selectedDayAssignments.filter((assignment) => assignment.assigneeType === 'responsible').length;
     const unassigned = selectedDayAssignments.filter((assignment) => assignment.assigneeType === 'unassigned').length;
 
-    return { total, doctorAssigned, responsibleAssigned, unassigned };
-  }, [selectedDayAssignments]);
+    return { total, disciplineAssigned, doctorAssigned, assistantAssigned, cabinetChiefAssigned, responsibleAssigned, unassigned };
+  }, [selectedDayAssignments, selectedDayDisciplineAssignments]);
 
   const selectedDayPackets = useMemo<CabinetDailyPacket[]>(
     () =>
       buildCabinetDailyPackets({
         cabinets,
-        assignments: selectedDayAssignments,
+        assignments: selectedDayAllAssignments,
         doctors,
       }),
-    [cabinets, doctors, selectedDayAssignments],
+    [cabinets, doctors, selectedDayAllAssignments],
   );
 
   const activeTemplate = templateState.projectTemplate || templateState.platformTemplate;
@@ -360,14 +514,21 @@ export default function ProjectCabinetsPage() {
   const resetAssignmentForm = useCallback(() => {
     setEditingAssignmentId(null);
     setAssignmentForm(createEmptyAssignmentForm(projectId, selectedDay));
+    setSelectedHumanSlotId('');
   }, [projectId, selectedDay]);
 
   const handleAssignmentCabinetChange = useCallback((cabinetId: string) => {
+    setSelectedHumanSlotId('');
     setAssignmentForm((current) => ({
       ...current,
       cabinetId,
+      assignmentDate: selectedDay,
+      startTime: '',
+      endTime: '',
+      cabinetSpecialty: '',
+      materials: [],
     }));
-  }, []);
+  }, [selectedDay]);
 
   const handleDoctorSaved = async (savedDoctor?: DoctorRecord) => {
     setDoctorModalOpen(false);
@@ -394,7 +555,8 @@ export default function ProjectCabinetsPage() {
         ...current,
         assigneeType: 'doctor',
         doctorId: savedDoctor.$id || '',
-        cabinetSpecialty: current.cabinetSpecialty || savedDoctor.specialty || '',
+        volunteerId: '',
+        cabinetSpecialty: '',
         responsibleName: '',
       }));
     }
@@ -419,6 +581,13 @@ export default function ProjectCabinetsPage() {
       return;
     }
 
+    const assignmentsResult = await getProjectCabinetAssignments(projectId);
+    if (!assignmentsResult.success) {
+      setMessage({ type: 'error', text: assignmentsResult.error });
+      setIsSavingCabinet(false);
+      return;
+    }
+
     setCabinets((current) => {
       if (editingCabinetId) {
         return current.map((cabinet) => (cabinet.$id === result.data.$id ? result.data : cabinet));
@@ -428,6 +597,7 @@ export default function ProjectCabinetsPage() {
         `${left.identifier} ${left.name}`.localeCompare(`${right.identifier} ${right.name}`, 'ro'),
       );
     });
+    setAssignments(assignmentsResult.data);
 
     setMessage({
       type: 'success',
@@ -448,6 +618,17 @@ export default function ProjectCabinetsPage() {
       specialty: cabinet.specialty || '',
       ultrasoundAvailable: cabinet.ultrasoundAvailable,
       materials: cabinet.materials || [],
+      specialtySchedule: disciplineAssignments
+        .filter((assignment) => assignment.cabinetId === cabinet.$id)
+        .map((assignment) => ({
+          assignmentId: assignment.$id || '',
+          assignmentDate: assignment.assignmentDate,
+          startTime: assignment.startTime,
+          endTime: assignment.endTime,
+          specialty: assignment.cabinetSpecialty || '',
+          materials: assignment.materials || [],
+          notes: assignment.notes || '',
+        })),
       notes: cabinet.notes || '',
     });
   };
@@ -490,6 +671,14 @@ export default function ProjectCabinetsPage() {
   };
 
   const handleSaveAssignment = async () => {
+    if (!selectedHumanSlot) {
+      setMessage({
+        type: 'error',
+        text: 'Selectează mai întâi un slot de specialitate definit pe cabinet.',
+      });
+      return;
+    }
+
     setIsSavingAssignment(true);
     setMessage(null);
 
@@ -521,16 +710,25 @@ export default function ProjectCabinetsPage() {
   const handleEditAssignment = (assignment: ProjectCabinetAssignment) => {
     setEditingAssignmentId(assignment.$id || null);
     setSelectedDay(assignment.assignmentDate);
+    const linkedDisciplineAssignment = disciplineAssignments.find(
+      (item) =>
+        item.cabinetId === assignment.cabinetId &&
+        item.assignmentDate === assignment.assignmentDate &&
+        item.startTime === assignment.startTime &&
+        item.endTime === assignment.endTime,
+    );
+    setSelectedHumanSlotId(linkedDisciplineAssignment?.$id || '');
     setAssignmentForm({
       projectId: assignment.projectId,
       cabinetId: assignment.cabinetId,
-      cabinetSpecialty: assignment.cabinetSpecialty || '',
-      materials: assignment.materials || [],
+      cabinetSpecialty: '',
+      materials: [],
       assignmentDate: assignment.assignmentDate,
       startTime: assignment.startTime,
       endTime: assignment.endTime,
       assigneeType: assignment.assigneeType,
       doctorId: assignment.doctorId || '',
+      volunteerId: assignment.volunteerId || '',
       responsibleName: assignment.responsibleName || '',
       notes: assignment.notes || '',
     });
@@ -710,7 +908,7 @@ export default function ProjectCabinetsPage() {
             Cabinete Medicale & Program
           </h1>
           <p className="mt-1 text-sm text-base-content/60">
-            Configurezi cabinetele fizice ale evenimentului, apoi mapezi pe fiecare interval disciplina și medicul sau responsabilul care lucrează acolo.
+            Configurezi cabinetele fizice ale evenimentului, definești sloturile de specialitate pentru fiecare cabinet și apoi aloci personalul pe acele sloturi.
           </p>
         </div>
 
@@ -720,12 +918,12 @@ export default function ProjectCabinetsPage() {
             <div className="mt-1 text-2xl font-black">{cabinets.length}</div>
           </div>
           <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3 shadow-sm">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/40">Intervale</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/40">Alocări</div>
             <div className="mt-1 text-2xl font-black">{assignments.length}</div>
           </div>
           <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3 shadow-sm">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/40">Medici activi</div>
-            <div className="mt-1 text-2xl font-black">{activeDoctors.length}</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/40">Voluntari activi</div>
+            <div className="mt-1 text-2xl font-black">{activeProjectVolunteers.length}</div>
           </div>
         </div>
       </div>
@@ -902,14 +1100,19 @@ export default function ProjectCabinetsPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr,1.35fr]">
         <div className="space-y-6">
-          <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
+          <div
+            ref={cabinetFormCardRef}
+            className={`rounded-[2rem] border bg-base-100 p-6 shadow-sm transition-colors ${
+              editingCabinetId ? 'border-primary/40 ring-1 ring-primary/15' : 'border-base-300'
+            }`}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-xl font-black text-base-content">
                   {editingCabinetId ? 'Editează cabinetul fizic' : 'Cabinet fizic nou'}
                 </h2>
                 <p className="mt-1 text-sm text-base-content/60">
-                  ID-ul spațiului fizic, echiparea lui fixă și eventuale setări fallback. Disciplina reală se stabilește doar pe interval.
+                  Definești spațiul fizic, echiparea lui fixă și programul de specialități pe zile și intervale. Personalul se alocă ulterior doar pe sloturile definite aici.
                 </p>
               </div>
               {editingCabinetId && (
@@ -923,6 +1126,7 @@ export default function ProjectCabinetsPage() {
               <label className="form-control">
                 <span className="label"><span className="label-text font-semibold">Nume cabinet</span></span>
                 <input
+                  ref={cabinetNameInputRef}
                   type="text"
                   className="input input-bordered w-full"
                   placeholder="CARDIOLOGIE 1"
@@ -955,7 +1159,7 @@ export default function ProjectCabinetsPage() {
               </label>
 
               <div className="md:col-span-2 rounded-2xl border border-secondary/15 bg-secondary/5 p-4 text-sm text-base-content/70">
-                Aici definești doar cabinetul fizic. Același spațiu poate găzdui dimineața cardiologie și după-amiaza chirurgie vasculară, pentru că disciplina și persoana alocată se aleg separat, în programare.
+                Specialitatea implicită rămâne doar fallback. Programul real al cabinetului, pe zile și intervale, se definește mai jos și devine baza pentru alocarea medicilor, asistenților și șefilor de cabinet.
               </div>
 
               <label className="form-control md:col-span-2">
@@ -987,6 +1191,262 @@ export default function ProjectCabinetsPage() {
                   onChange={(event) => setCabinetForm((current) => ({ ...current, notes: event.target.value }))}
                 />
               </label>
+            </div>
+
+            <div className="mt-6 rounded-[1.5rem] border border-primary/15 bg-primary/5 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="flex items-center gap-2 text-base font-black text-base-content">
+                    <Clock size={16} className="text-primary" />
+                    Program specialități pe cabinet
+                  </h3>
+                  <p className="mt-1 text-xs text-base-content/60">
+                    Aici definești ce disciplină funcționează în cabinetul fizic, pe zi și pe interval. După salvare, aceste sloturi vor putea primi medici, asistenți și șefi de cabinet.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm gap-2"
+                  onClick={() =>
+                    setCabinetForm((current) => ({
+                      ...current,
+                      specialtySchedule: [...(current.specialtySchedule || []), createScheduleSlot(selectedDay)],
+                    }))
+                  }
+                >
+                  <Plus size={14} /> Adaugă slot
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                {(cabinetForm.specialtySchedule || []).map((slot, slotIndex) => (
+                  <div key={slot.assignmentId || `slot-${slotIndex}`} className="rounded-[1.5rem] border border-base-300 bg-base-100 p-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="form-control">
+                        <span className="label"><span className="label-text font-semibold">Ziua</span></span>
+                        <select
+                          className="select select-bordered w-full"
+                          value={slot.assignmentDate}
+                          onChange={(event) =>
+                            setCabinetForm((current) => ({
+                              ...current,
+                              specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                itemIndex === slotIndex ? { ...item, assignmentDate: event.target.value } : item,
+                              ),
+                            }))
+                          }
+                        >
+                          <option value="">Selectează ziua</option>
+                          {dayOptions.map((day) => (
+                            <option key={day.value} value={day.value}>
+                              {day.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="form-control">
+                          <span className="label"><span className="label-text">Ora început</span></span>
+                          <input
+                            type="time"
+                            className="input input-bordered w-full"
+                            value={slot.startTime}
+                            onChange={(event) =>
+                              setCabinetForm((current) => ({
+                                ...current,
+                                specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                  itemIndex === slotIndex ? { ...item, startTime: event.target.value } : item,
+                                ),
+                              }))
+                            }
+                          />
+                        </label>
+
+                        <label className="form-control">
+                          <span className="label"><span className="label-text">Ora final</span></span>
+                          <input
+                            type="time"
+                            className="input input-bordered w-full"
+                            value={slot.endTime}
+                            onChange={(event) =>
+                              setCabinetForm((current) => ({
+                                ...current,
+                                specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                  itemIndex === slotIndex ? { ...item, endTime: event.target.value } : item,
+                                ),
+                              }))
+                            }
+                          />
+                        </label>
+                      </div>
+
+                      <label className="form-control md:col-span-2">
+                        <span className="label"><span className="label-text">Specialitatea din interval</span></span>
+                        <SearchableSelect
+                          value={slot.specialty || ''}
+                          options={getDoctorSpecialtyOptions(slot.specialty)}
+                          placeholder="Alege specialitatea din acest interval"
+                          emptyOptionLabel="Cabinet non-clinic / fără specialitate"
+                          searchPlaceholder="Caută specialitatea"
+                          onChange={(value) =>
+                            setCabinetForm((current) => ({
+                              ...current,
+                              specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                itemIndex === slotIndex ? { ...item, specialty: value } : item,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+
+                      <label className="form-control md:col-span-2">
+                        <span className="label"><span className="label-text">Observații slot</span></span>
+                        <textarea
+                          className="textarea textarea-bordered min-h-20 w-full"
+                          placeholder="Ex: consultații eco doar în prima parte a zilei"
+                          value={slot.notes || ''}
+                          onChange={(event) =>
+                            setCabinetForm((current) => ({
+                              ...current,
+                              specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                itemIndex === slotIndex ? { ...item, notes: event.target.value } : item,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-base-300 bg-base-50 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-black text-base-content">Materiale specifice slotului</h4>
+                          <p className="mt-1 text-xs text-base-content/55">
+                            Se combină cu echiparea fixă a cabinetului în checklist și în planșe.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-xs gap-2"
+                            onClick={() =>
+                              setCabinetForm((current) => ({
+                                ...current,
+                                specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                  itemIndex === slotIndex
+                                    ? { ...item, materials: [...(item.materials || []), createMaterialItem()] }
+                                    : item,
+                                ),
+                              }))
+                            }
+                          >
+                            <Plus size={12} /> Material
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs gap-2 text-error"
+                            onClick={() =>
+                              setCabinetForm((current) => ({
+                                ...current,
+                                specialtySchedule: (current.specialtySchedule || []).filter((_, itemIndex) => itemIndex !== slotIndex),
+                              }))
+                            }
+                          >
+                            <Trash2 size={12} /> Șterge slot
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {(slot.materials || []).map((material, materialIndex) => (
+                          <div key={material.id} className="grid gap-3 rounded-2xl border border-base-300 bg-base-100 p-3 md:grid-cols-[auto,1fr,auto] md:items-center">
+                            <label className="label cursor-pointer gap-3 px-0">
+                              <input
+                                type="checkbox"
+                                className="checkbox checkbox-primary"
+                                checked={material.checked}
+                                onChange={(event) =>
+                                  setCabinetForm((current) => ({
+                                    ...current,
+                                    specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                      itemIndex === slotIndex
+                                        ? {
+                                            ...item,
+                                            materials: (item.materials || []).map((slotMaterial, slotMaterialIndex) =>
+                                              slotMaterialIndex === materialIndex
+                                                ? { ...slotMaterial, checked: event.target.checked }
+                                                : slotMaterial,
+                                            ),
+                                          }
+                                        : item,
+                                    ),
+                                  }))
+                                }
+                              />
+                              <span className="label-text text-xs text-base-content/60">Pregătit</span>
+                            </label>
+                            <input
+                              type="text"
+                              className="input input-bordered w-full"
+                              placeholder="Ex: kit eco, set pansament, consumabile dedicate"
+                              value={material.label}
+                              onChange={(event) =>
+                                setCabinetForm((current) => ({
+                                  ...current,
+                                  specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                    itemIndex === slotIndex
+                                      ? {
+                                          ...item,
+                                          materials: (item.materials || []).map((slotMaterial, slotMaterialIndex) =>
+                                            slotMaterialIndex === materialIndex
+                                              ? { ...slotMaterial, label: event.target.value }
+                                              : slotMaterial,
+                                          ),
+                                        }
+                                      : item,
+                                  ),
+                                }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm text-error"
+                              onClick={() =>
+                                setCabinetForm((current) => ({
+                                  ...current,
+                                  specialtySchedule: (current.specialtySchedule || []).map((item, itemIndex) =>
+                                    itemIndex === slotIndex
+                                      ? {
+                                          ...item,
+                                          materials: (item.materials || []).filter((_, slotMaterialIndex) => slotMaterialIndex !== materialIndex),
+                                        }
+                                      : item,
+                                  ),
+                                }))
+                              }
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+
+                        {(slot.materials || []).length === 0 && (
+                          <div className="rounded-2xl border border-dashed border-base-300 px-4 py-4 text-sm text-base-content/55">
+                            Slotul nu are încă materiale specifice. Se va folosi doar echiparea standard a cabinetului.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {(cabinetForm.specialtySchedule || []).length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-base-300 px-4 py-5 text-sm text-base-content/55">
+                    Cabinetul nu are încă sloturi de specialitate definite. Le poți adăuga acum sau ulterior, la editare.
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-6 rounded-[1.5rem] border border-base-300 bg-base-50 p-4">
@@ -1122,7 +1582,10 @@ export default function ProjectCabinetsPage() {
                             Echipare: {checkedMaterials}/{totalMaterials}
                           </span>
                           <span className="badge badge-ghost">
-                            Intervale: {assignmentCountByCabinetId.get(cabinet.$id || '') || 0}
+                            Sloturi: {specialtySlotCountByCabinetId.get(cabinet.$id || '') || 0}
+                          </span>
+                          <span className="badge badge-ghost">
+                            Personal alocat: {assignmentCountByCabinetId.get(cabinet.$id || '') || 0}
                           </span>
                         </div>
                         {cabinet.notes ? (
@@ -1168,13 +1631,16 @@ export default function ProjectCabinetsPage() {
               <div>
                 <h2 className="text-xl font-black text-base-content">Programare pe zile și intervale</h2>
                 <p className="mt-1 text-sm text-base-content/60">
-                  Pentru fiecare zi alegi cabinetul fizic, disciplina care intră în spațiu și persoana care lucrează în intervalul respectiv.
+                  Pentru ziua selectată alegi cabinetul fizic și unul dintre sloturile de specialitate deja definite pe acel cabinet. Apoi aloci personalul pe acel slot.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <div className="badge badge-outline badge-lg">{selectedDayStats.total} intervale</div>
+                <div className="badge badge-outline badge-lg">{selectedDayStats.total} alocări</div>
+                <div className="badge badge-outline badge-lg">{selectedDayStats.disciplineAssigned} sloturi</div>
                 <div className="badge badge-outline badge-lg">{selectedDayStats.doctorAssigned} medici</div>
+                <div className="badge badge-outline badge-lg">{selectedDayStats.assistantAssigned} asistenți</div>
+                <div className="badge badge-outline badge-lg">{selectedDayStats.cabinetChiefAssigned} șefi cabinet</div>
                 <div className="badge badge-outline badge-lg">{selectedDayStats.responsibleAssigned} responsabili</div>
                 <div className={`badge badge-lg ${selectedDayStats.unassigned > 0 ? 'badge-warning' : 'badge-ghost'}`}>
                   {selectedDayStats.unassigned} neasignate
@@ -1216,61 +1682,33 @@ export default function ProjectCabinetsPage() {
                 </label>
 
                 <label className="form-control">
-                  <span className="label"><span className="label-text font-semibold">Ziua</span></span>
+                  <span className="label"><span className="label-text font-semibold">Slot de specialitate</span></span>
                   <select
                     className="select select-bordered w-full"
-                    value={assignmentForm.assignmentDate}
-                    onChange={(event) =>
+                    value={selectedHumanSlotId}
+                    onChange={(event) => {
+                      const nextSlotId = event.target.value;
+                      const selectedSlot = selectedCabinetDisciplineSlots.find((slot) => slot.$id === nextSlotId) || null;
+
+                      setSelectedHumanSlotId(nextSlotId);
                       setAssignmentForm((current) => ({
                         ...current,
-                        assignmentDate: event.target.value,
-                      }))
-                    }
+                        assignmentDate: selectedSlot?.assignmentDate || selectedDay,
+                        startTime: selectedSlot?.startTime || '',
+                        endTime: selectedSlot?.endTime || '',
+                        cabinetSpecialty: selectedSlot?.cabinetSpecialty || '',
+                        materials: selectedSlot?.materials || [],
+                      }));
+                    }}
+                    disabled={!assignmentForm.cabinetId}
                   >
-                    <option value="">Selectează ziua</option>
-                    {dayOptions.map((day) => (
-                      <option key={day.value} value={day.value}>
-                        {day.label}
+                    <option value="">Selectează slotul definit pe cabinet</option>
+                    {selectedCabinetDisciplineSlots.map((slot) => (
+                      <option key={slot.$id} value={slot.$id}>
+                        {slot.startTime}-{slot.endTime} · {slot.cabinetSpecialty || 'Cabinet non-clinic'}
                       </option>
                     ))}
                   </select>
-                </label>
-
-                <label className="form-control">
-                  <span className="label"><span className="label-text">Ora început</span></span>
-                  <input
-                    type="time"
-                    className="input input-bordered w-full"
-                    value={assignmentForm.startTime}
-                    onChange={(event) => setAssignmentForm((current) => ({ ...current, startTime: event.target.value }))}
-                  />
-                </label>
-
-                <label className="form-control">
-                  <span className="label"><span className="label-text">Ora final</span></span>
-                  <input
-                    type="time"
-                    className="input input-bordered w-full"
-                    value={assignmentForm.endTime}
-                    onChange={(event) => setAssignmentForm((current) => ({ ...current, endTime: event.target.value }))}
-                  />
-                </label>
-
-                <label className="form-control md:col-span-2">
-                  <span className="label"><span className="label-text">Disciplina / specialitatea în interval</span></span>
-                  <SearchableSelect
-                    value={assignmentForm.cabinetSpecialty || ''}
-                    options={getDoctorSpecialtyOptions(assignmentForm.cabinetSpecialty)}
-                    placeholder="Alege disciplina din acest interval"
-                    emptyOptionLabel="Cabinet non-clinic / fără disciplină"
-                    searchPlaceholder="Caută disciplina"
-                    onChange={(value) =>
-                      setAssignmentForm((current) => ({
-                        ...current,
-                        cabinetSpecialty: value,
-                      }))
-                    }
-                  />
                 </label>
 
                 {selectedAssignmentCabinet && (
@@ -1279,37 +1717,71 @@ export default function ProjectCabinetsPage() {
                       {selectedAssignmentCabinet.identifier} · {selectedAssignmentCabinet.name}
                     </div>
                     <div className="mt-1">
-                      {selectedAssignmentCabinet.specialty
-                        ? `Fallback cabinet: ${selectedAssignmentCabinet.specialty}`
-                        : 'Cabinet fără disciplină implicită.'}
+                      Sloturi definite pentru {dayOptions.find((day) => day.value === selectedDay)?.shortLabel || selectedDay}: {selectedCabinetDisciplineSlots.length}
                     </div>
                     <div className="mt-1">
                       Echipare fizică definită: {(selectedAssignmentCabinet.materials || []).length} articole
                       {selectedAssignmentCabinet.ultrasoundAvailable ? ' · cu ecograf' : ' · fără ecograf'}
                     </div>
+                    {selectedHumanSlot ? (
+                      <div className="mt-1">
+                        Slot activ: {selectedHumanSlot.startTime}-{selectedHumanSlot.endTime}
+                        {selectedHumanSlot.cabinetSpecialty ? ` · ${selectedHumanSlot.cabinetSpecialty}` : ' · cabinet non-clinic'}
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        Alege un slot definit pe cabinet. Dacă nu există încă, editează cabinetul fizic și adaugă programul de specialități.
+                      </div>
+                    )}
+                    {!selectedCabinetDisciplineSlots.length && selectedAssignmentCabinet.$id ? (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm gap-2"
+                          onClick={() => handleEditCabinet(selectedAssignmentCabinet)}
+                        >
+                          <Edit2 size={14} /> Editează sloturile cabinetului
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
                 <label className="form-control md:col-span-2">
-                  <span className="label"><span className="label-text">Tip responsabil în interval</span></span>
+                  <span className="label"><span className="label-text">Tip alocare personal</span></span>
                   <select
                     className="select select-bordered w-full"
-                    value={assignmentForm.assigneeType || 'unassigned'}
+                    value={assignmentForm.assigneeType || 'doctor'}
                     onChange={(event) =>
                       setAssignmentForm((current) => ({
                         ...current,
                         assigneeType: event.target.value as CabinetAssignmentFormInput['assigneeType'],
                         doctorId: event.target.value === 'doctor' ? current.doctorId || '' : '',
+                        volunteerId:
+                          event.target.value === 'assistant' || event.target.value === 'cabinet-chief'
+                            ? current.volunteerId || ''
+                            : '',
                         responsibleName:
                           event.target.value === 'responsible' ? current.responsibleName || '' : '',
                       }))
                     }
                   >
-                    <option value="unassigned">Neasignat momentan</option>
                     <option value="doctor">Medic</option>
+                    <option value="assistant">Asistent medical</option>
+                    <option value="cabinet-chief">Șef cabinet</option>
                     <option value="responsible">Responsabil / tehnician</option>
                   </select>
                 </label>
+
+                {selectedHumanSlot && (
+                  <div className="md:col-span-2 rounded-2xl border border-secondary/15 bg-secondary/5 p-4 text-sm text-base-content/70">
+                    Personalul se alocă pe slotul {selectedHumanSlot.startTime}-{selectedHumanSlot.endTime}
+                    {selectedHumanSlot.cabinetSpecialty ? ` pentru ${selectedHumanSlot.cabinetSpecialty}` : ''}.
+                    {(selectedHumanSlot.materials || []).length > 0
+                      ? ` Slotul are ${(selectedHumanSlot.materials || []).length} materiale specifice deja definite pentru checklist.`
+                      : ' Slotul nu are materiale specifice suplimentare.'}
+                  </div>
+                )}
 
                 {assignmentForm.assigneeType === 'doctor' && (
                   <div className="md:col-span-2 space-y-3 rounded-2xl border border-secondary/15 bg-base-100 p-4">
@@ -1320,14 +1792,10 @@ export default function ProjectCabinetsPage() {
                           className="select select-bordered w-full"
                           value={assignmentForm.doctorId || ''}
                           onChange={(event) =>
-                            setAssignmentForm((current) => {
-                              const nextDoctor = activeDoctors.find((doctor) => doctor.$id === event.target.value);
-                              return {
-                                ...current,
-                                doctorId: event.target.value,
-                                cabinetSpecialty: current.cabinetSpecialty || nextDoctor?.specialty || '',
-                              };
-                            })
+                            setAssignmentForm((current) => ({
+                              ...current,
+                              doctorId: event.target.value,
+                            }))
                           }
                         >
                           <option value="">Selectează medicul</option>
@@ -1384,6 +1852,60 @@ export default function ProjectCabinetsPage() {
                   </label>
                 )}
 
+                {(assignmentForm.assigneeType === 'assistant' || assignmentForm.assigneeType === 'cabinet-chief') && (
+                  <div className="md:col-span-2 space-y-3 rounded-2xl border border-secondary/15 bg-base-100 p-4">
+                    <div className="flex flex-col gap-3">
+                      <label className="form-control">
+                        <span className="label">
+                          <span className="label-text">
+                            {assignmentForm.assigneeType === 'assistant' ? 'Asistent medical pe interval' : 'Șef cabinet pe interval'}
+                          </span>
+                        </span>
+                        <select
+                          className="select select-bordered w-full"
+                          value={assignmentForm.volunteerId || ''}
+                          onChange={(event) =>
+                            setAssignmentForm((current) => ({
+                              ...current,
+                              volunteerId: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Selectează voluntarul</option>
+                          {activeProjectVolunteers.map((volunteer) => (
+                            <option key={volunteer.$id} value={volunteer.$id}>
+                              {getVolunteerDisplayName(volunteer)}
+                              {volunteer.activityCategory ? ` · ${volunteer.activityCategory}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      {activeProjectVolunteers.length === 0 && (
+                        <div className="rounded-2xl border border-dashed border-base-300 px-4 py-4 text-sm text-base-content/60">
+                          Nu există încă voluntari activi în proiect. Adaugă-i mai întâi în registrul voluntarilor.
+                          <div className="mt-3">
+                            <Link href={`/projects/${projectId}/volunteers`} className="btn btn-outline btn-sm gap-2">
+                              <Users size={14} /> Deschide registrul voluntarilor
+                            </Link>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedAssignmentVolunteer && (
+                      <div className="rounded-2xl border border-base-300 bg-base-50 p-3">
+                        <div className="font-bold">{getVolunteerDisplayName(selectedAssignmentVolunteer)}</div>
+                        <div className="text-xs text-base-content/60">
+                          {selectedAssignmentVolunteer.activityCategory || 'Voluntar proiect'}
+                          {selectedAssignmentVolunteer.email ? ` · ${selectedAssignmentVolunteer.email}` : ''}
+                          {selectedAssignmentVolunteer.phone ? ` · ${selectedAssignmentVolunteer.phone}` : ''}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <label className="form-control md:col-span-2">
                   <span className="label"><span className="label-text">Observații interval</span></span>
                   <textarea
@@ -1393,91 +1915,6 @@ export default function ProjectCabinetsPage() {
                     onChange={(event) => setAssignmentForm((current) => ({ ...current, notes: event.target.value }))}
                   />
                 </label>
-
-                <div className="md:col-span-2 rounded-[1.5rem] border border-base-300 bg-base-50 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="flex items-center gap-2 text-base font-black text-base-content">
-                        <Package size={16} className="text-secondary" />
-                        Checklist specific disciplinei / intervalului
-                      </h3>
-                      <p className="mt-1 text-xs text-base-content/55">
-                        Se combină automat cu echiparea fixă a cabinetului când generezi checklist-ul și planșa.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm gap-2"
-                      onClick={() =>
-                        setAssignmentForm((current) => ({
-                          ...current,
-                          materials: [...(current.materials || []), createMaterialItem()],
-                        }))
-                      }
-                    >
-                      <Plus size={14} /> Adaugă material
-                    </button>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
-                    {(assignmentForm.materials || []).map((item, index) => (
-                      <div key={item.id} className="grid gap-3 rounded-2xl border border-base-300 bg-base-100 p-3 md:grid-cols-[auto,1fr,auto] md:items-center">
-                        <label className="label cursor-pointer gap-3 px-0">
-                          <input
-                            type="checkbox"
-                            className="checkbox checkbox-primary"
-                            checked={item.checked}
-                            onChange={(event) =>
-                              setAssignmentForm((current) => ({
-                                ...current,
-                                materials: (current.materials || []).map((material, materialIndex) =>
-                                  materialIndex === index
-                                    ? { ...material, checked: event.target.checked }
-                                    : material,
-                                ),
-                              }))
-                            }
-                          />
-                          <span className="label-text text-xs text-base-content/60">Pregătit</span>
-                        </label>
-                        <input
-                          type="text"
-                          className="input input-bordered w-full"
-                          placeholder="Ex: gel eco, kit pansament, consumabile suplimentare"
-                          value={item.label}
-                          onChange={(event) =>
-                            setAssignmentForm((current) => ({
-                              ...current,
-                              materials: (current.materials || []).map((material, materialIndex) =>
-                                materialIndex === index
-                                  ? { ...material, label: event.target.value }
-                                  : material,
-                              ),
-                            }))
-                          }
-                        />
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm text-error"
-                          onClick={() =>
-                            setAssignmentForm((current) => ({
-                              ...current,
-                              materials: (current.materials || []).filter((_, materialIndex) => materialIndex !== index),
-                            }))
-                          }
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-
-                    {(assignmentForm.materials || []).length === 0 && (
-                      <div className="rounded-2xl border border-dashed border-base-300 px-4 py-5 text-sm text-base-content/55">
-                        Nu există materiale suplimentare pentru acest interval. Se va folosi doar echiparea de bază a cabinetului, dacă există.
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
 
               <div className="mt-5 flex flex-wrap justify-end gap-2">
@@ -1490,7 +1927,7 @@ export default function ProjectCabinetsPage() {
                   type="button"
                   className="btn btn-primary gap-2"
                   onClick={handleSaveAssignment}
-                  disabled={isSavingAssignment || cabinets.length === 0}
+                  disabled={isSavingAssignment || cabinets.length === 0 || !selectedHumanSlot}
                 >
                   {isSavingAssignment ? <span className="loading loading-spinner loading-xs" /> : <Save size={14} />}
                   {editingAssignmentId ? 'Salvează intervalul' : 'Adaugă în program'}
@@ -1550,17 +1987,17 @@ export default function ProjectCabinetsPage() {
                           <div className="font-bold">{assignment.cabinetIdentifier}</div>
                           <div className="text-xs text-base-content/55">{assignment.cabinetName}</div>
                         </td>
-                        <td>{assignment.cabinetSpecialty || 'Non-clinic'}</td>
+                        <td>
+                          {disciplineAssignmentsBySlot.get(
+                            `${assignment.cabinetId}|${assignment.assignmentDate}|${assignment.startTime}|${assignment.endTime}`,
+                          )?.cabinetSpecialty || 'Non-clinic'}
+                        </td>
                         <td>
                           <div className="space-y-1">
-                            <div className="font-medium">{getAssignmentAssigneeLabel(assignment)}</div>
-                            <div className="text-xs text-base-content/55">
-                              {assignment.assigneeType === 'doctor'
-                                ? 'Medic'
-                                : assignment.assigneeType === 'responsible'
-                                  ? 'Responsabil'
-                                  : 'Neasignat'}
+                            <div className="font-medium">
+                              {getCabinetAssignmentAssigneeName(assignment) || 'Neasignat'}
                             </div>
+                            <div className="text-xs text-base-content/55">{getCabinetAssigneeTypeLabel(assignment.assigneeType)}</div>
                           </div>
                         </td>
                         <td className="max-w-xs">
@@ -1605,9 +2042,9 @@ export default function ProjectCabinetsPage() {
                           <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
                             <Users className="text-base-content/25" size={36} />
                             <div>
-                              <div className="font-semibold text-base-content/70">Nu există încă intervale pentru ziua selectată.</div>
+                              <div className="font-semibold text-base-content/70">Nu există încă alocări de personal pentru ziua selectată.</div>
                               <p className="mt-1 text-sm text-base-content/50">
-                                Adaugă primul interval din formularul de mai sus.
+                                Definește sloturile din cabinetul fizic și apoi alocă personalul pe ele din formularul de mai sus.
                               </p>
                             </div>
                           </div>
@@ -1656,8 +2093,12 @@ export default function ProjectCabinetsPage() {
                           {packet.ultrasoundAvailable ? 'Cu ecograf' : 'Fără ecograf'}
                         </span>
                       </div>
-                      <div className="text-sm text-base-content/70">
-                        <span className="font-semibold">Alocat:</span> {packet.assigneeDisplayName}
+                      <div className="space-y-1 text-sm text-base-content/70">
+                        {buildCabinetRoleSummaryLines(packet.roleAssignments).map((line) => (
+                          <div key={`${packet.assignmentId}-${line}`}>
+                            <span className="font-semibold">{line}</span>
+                          </div>
+                        ))}
                       </div>
                       <div className="text-sm text-base-content/60">
                         {packet.specialty || 'Cabinet non-clinic'}

@@ -6,6 +6,7 @@ import type {
   CabinetPrintTemplateRecord,
   CabinetAssignmentFormInput,
   CabinetFormInput,
+  CabinetSpecialtyScheduleSlot,
   ProjectCabinet,
   ProjectCabinetAssignment,
 } from '@/lib/cabinet-types';
@@ -28,6 +29,8 @@ import {
 } from '@/lib/cabinets-server';
 import {
   doTimeRangesOverlap,
+  getCabinetAssigneeTypeLabel,
+  getCabinetAssignmentAssigneeName,
   normalizeCabinetIdentifier,
   normalizeCabinetName,
   normalizeResponsibleName,
@@ -40,6 +43,18 @@ import { getDoctor } from '@/lib/doctors-server';
 import type { DoctorRecord } from '@/lib/doctor-types';
 import { ensurePlatformTemplatesSchema, getPlatformTemplate } from '@/lib/platform-templates-server';
 import type { PlatformTemplateRecord } from '@/lib/platform-template-types';
+
+const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+const VOLUNTEERS_COLLECTION_ID = 'project_volunteers';
+
+type ProjectVolunteerRecord = {
+  $id?: string;
+  projectId: string;
+  firstName?: string;
+  lastName?: string;
+  activityCategory?: string;
+  status?: 'active' | 'inactive' | 'archived';
+};
 
 type ActionResult<T> =
   | { success: true; data: T }
@@ -162,6 +177,7 @@ export async function createProjectCabinet(input: CabinetFormInput): Promise<Act
     validateCabinetUniqueness(cabinets, sanitized);
 
     const created = await createProjectCabinetDocument(admin.databases, sanitized, actor.$id);
+    await syncCabinetSpecialtySchedule(admin, actor.$id, created, sanitized);
 
     revalidateCabinetPaths(sanitized.projectId);
     return { success: true, data: created };
@@ -189,7 +205,9 @@ export async function updateProjectCabinet(
     const cabinets = await listProjectCabinets(admin.databases, existing.projectId);
     validateCabinetUniqueness(cabinets, sanitized, cabinetId);
 
+    await syncCabinetSpecialtySchedule(admin, actor.$id, existing, sanitized, true);
     const updated = await updateProjectCabinetDocument(admin.databases, cabinetId, sanitized, actor.$id);
+    await syncCabinetSpecialtySchedule(admin, actor.$id, updated, sanitized);
 
     revalidateCabinetPaths(existing.projectId);
     return { success: true, data: updated };
@@ -233,13 +251,29 @@ export async function saveProjectCabinetAssignment(
       throw new Error('Cabinetul selectat nu aparține proiectului curent.');
     }
 
-    const doctor = await resolveDoctorForAssignment(admin, sanitized);
+    const { doctor, volunteer } = await resolveAssignmentActors(admin, sanitized, cabinet.projectId);
     const assignments = await listProjectCabinetAssignments(admin.databases, sanitized.projectId);
+    ensureCabinetDisciplineSlotExists(assignments, sanitized, cabinet);
     validateAssignmentConflicts(assignments, sanitized, cabinet, assignmentId);
 
     const result = assignmentId
-      ? await updateProjectCabinetAssignmentDocument(admin.databases, assignmentId, sanitized, actor.$id, cabinet, doctor)
-      : await createProjectCabinetAssignmentDocument(admin.databases, sanitized, actor.$id, cabinet, doctor);
+      ? await updateProjectCabinetAssignmentDocument(
+          admin.databases,
+          assignmentId,
+          sanitized,
+          actor.$id,
+          cabinet,
+          doctor,
+          volunteer,
+        )
+      : await createProjectCabinetAssignmentDocument(
+          admin.databases,
+          sanitized,
+          actor.$id,
+          cabinet,
+          doctor,
+          volunteer,
+        );
 
     revalidateCabinetPaths(sanitized.projectId);
     return { success: true, data: result };
@@ -280,18 +314,30 @@ export async function getProjectCabinetAssignmentById(
   }
 }
 
-async function resolveDoctorForAssignment(
+async function resolveAssignmentActors(
   admin: Awaited<ReturnType<typeof createAdminClient>>,
   input: CabinetAssignmentFormInput,
+  projectId: string,
 ) {
-  if (input.assigneeType !== 'doctor' || !input.doctorId) {
-    return null;
+  let doctor: DoctorRecord | null = null;
+  let volunteer: ProjectVolunteerRecord | null = null;
+
+  if (input.assigneeType === 'doctor' && input.doctorId) {
+    doctor = await getDoctor(admin.databases, input.doctorId);
+    ensureDoctorIsAssignable(doctor);
   }
 
-  const doctor = await getDoctor(admin.databases, input.doctorId);
-  ensureDoctorIsAssignable(doctor);
+  if ((input.assigneeType === 'assistant' || input.assigneeType === 'cabinet-chief') && input.volunteerId) {
+    const volunteerDoc = await admin.databases.getDocument(
+      DATABASE_ID,
+      VOLUNTEERS_COLLECTION_ID,
+      input.volunteerId,
+    );
+    volunteer = JSON.parse(JSON.stringify(volunteerDoc)) as ProjectVolunteerRecord;
+    ensureVolunteerIsAssignable(volunteer, projectId, input.assigneeType);
+  }
 
-  return doctor;
+  return { doctor, volunteer };
 }
 
 function validateCabinetUniqueness(
@@ -323,6 +369,179 @@ function validateCabinetUniqueness(
   }
 }
 
+async function syncCabinetSpecialtySchedule(
+  admin: Awaited<ReturnType<typeof createAdminClient>>,
+  actorUserId: string,
+  cabinet: ProjectCabinet,
+  input: CabinetFormInput,
+  dryRun = false,
+) {
+  const allAssignments = await listProjectCabinetAssignments(admin.databases, cabinet.projectId);
+  const cabinetAssignments = allAssignments.filter((assignment) => assignment.cabinetId === cabinet.$id);
+  const existingDisciplineAssignments = cabinetAssignments.filter(
+    (assignment) => assignment.assigneeType === 'discipline',
+  );
+  const existingHumanAssignments = cabinetAssignments.filter(
+    (assignment) => assignment.assigneeType !== 'discipline',
+  );
+  const submittedSlots = input.specialtySchedule || [];
+  const keptDisciplineIds = new Set(
+    submittedSlots.map((slot) => slot.assignmentId || '').filter(Boolean),
+  );
+
+  for (const existingAssignment of existingDisciplineAssignments) {
+    if (!existingAssignment.$id || keptDisciplineIds.has(existingAssignment.$id)) {
+      continue;
+    }
+
+    const linkedHumanAssignments = existingHumanAssignments.filter((assignment) =>
+      matchesCabinetSlot(assignment, existingAssignment),
+    );
+
+    if (linkedHumanAssignments.length > 0) {
+      throw new Error(
+        `Nu poți elimina slotul ${existingAssignment.assignmentDate} ${existingAssignment.startTime}-${existingAssignment.endTime} din cabinetul ${cabinet.identifier || cabinet.name} cât timp există personal alocat pe acel interval.`,
+      );
+    }
+  }
+
+  for (const slot of submittedSlots) {
+    const existingAssignment =
+      slot.assignmentId
+        ? existingDisciplineAssignments.find((assignment) => assignment.$id === slot.assignmentId)
+        : null;
+
+    if (
+      existingAssignment &&
+      hasCabinetSlotTimingChanged(existingAssignment, slot)
+    ) {
+      const linkedHumanAssignments = existingHumanAssignments.filter((assignment) =>
+        matchesCabinetSlot(assignment, existingAssignment),
+      );
+
+      if (linkedHumanAssignments.length > 0) {
+        throw new Error(
+          `Nu poți modifica intervalul ${existingAssignment.assignmentDate} ${existingAssignment.startTime}-${existingAssignment.endTime} pentru cabinetul ${cabinet.identifier || cabinet.name} cât timp există medici sau voluntari alocați pe acel slot.`,
+        );
+      }
+    }
+  }
+
+  if (dryRun) {
+    return;
+  }
+
+  for (const slot of submittedSlots) {
+    const slotInput = buildDisciplineAssignmentInput(cabinet.projectId, cabinet.$id || '', slot);
+    const existingAssignment =
+      slot.assignmentId
+        ? existingDisciplineAssignments.find((assignment) => assignment.$id === slot.assignmentId)
+        : null;
+
+    if (existingAssignment?.$id) {
+      await updateProjectCabinetAssignmentDocument(
+        admin.databases,
+        existingAssignment.$id,
+        slotInput,
+        actorUserId,
+        cabinet,
+      );
+      continue;
+    }
+
+    await createProjectCabinetAssignmentDocument(
+      admin.databases,
+      slotInput,
+      actorUserId,
+      cabinet,
+    );
+  }
+
+  for (const existingAssignment of existingDisciplineAssignments) {
+    if (!existingAssignment.$id || keptDisciplineIds.has(existingAssignment.$id)) {
+      continue;
+    }
+
+    await deleteProjectCabinetAssignmentDocument(admin.databases, existingAssignment.$id);
+  }
+
+  for (const assignment of existingHumanAssignments) {
+    if (!assignment.$id) {
+      continue;
+    }
+
+    await updateProjectCabinetAssignmentDocument(
+      admin.databases,
+      assignment.$id,
+      buildAssignmentInputFromExisting(assignment),
+      actorUserId,
+      cabinet,
+    );
+  }
+}
+
+function buildDisciplineAssignmentInput(
+  projectId: string,
+  cabinetId: string,
+  slot: CabinetSpecialtyScheduleSlot,
+): CabinetAssignmentFormInput {
+  return {
+    projectId,
+    cabinetId,
+    assignmentDate: slot.assignmentDate,
+    startTime: slot.startTime,
+    endTime: slot.endTime,
+    assigneeType: 'discipline',
+    cabinetSpecialty: slot.specialty || '',
+    materials: slot.materials || [],
+    notes: slot.notes || '',
+    doctorId: '',
+    volunteerId: '',
+    responsibleName: '',
+  };
+}
+
+function buildAssignmentInputFromExisting(
+  assignment: ProjectCabinetAssignment,
+): CabinetAssignmentFormInput {
+  return {
+    projectId: assignment.projectId,
+    cabinetId: assignment.cabinetId,
+    assignmentDate: assignment.assignmentDate,
+    startTime: assignment.startTime,
+    endTime: assignment.endTime,
+    assigneeType: assignment.assigneeType,
+    cabinetSpecialty: assignment.cabinetSpecialty || '',
+    materials: assignment.materials || [],
+    doctorId: assignment.doctorId || '',
+    volunteerId: assignment.volunteerId || '',
+    responsibleName: assignment.responsibleName || '',
+    notes: assignment.notes || '',
+  };
+}
+
+function matchesCabinetSlot(
+  assignment: Pick<ProjectCabinetAssignment, 'assignmentDate' | 'startTime' | 'endTime'>,
+  slot: Pick<ProjectCabinetAssignment, 'assignmentDate' | 'startTime' | 'endTime'>,
+) {
+  return (
+    assignment.assignmentDate === slot.assignmentDate &&
+    assignment.startTime === slot.startTime &&
+    assignment.endTime === slot.endTime
+  );
+}
+
+function hasCabinetSlotTimingChanged(
+  assignment: Pick<ProjectCabinetAssignment, 'assignmentDate' | 'startTime' | 'endTime'>,
+  slot: Pick<CabinetSpecialtyScheduleSlot, 'assignmentDate' | 'startTime' | 'endTime'>,
+) {
+  return (
+    assignment.assignmentDate !== slot.assignmentDate ||
+    assignment.startTime !== slot.startTime ||
+    assignment.endTime !== slot.endTime
+  );
+}
+
 function validateAssignmentConflicts(
   assignments: ProjectCabinetAssignment[],
   input: CabinetAssignmentFormInput,
@@ -335,14 +554,17 @@ function validateAssignmentConflicts(
       assignment.assignmentDate === input.assignmentDate,
   );
 
-  const cabinetConflict = sameDayAssignments.find(
+  const overlappingCabinetRoleConflict = sameDayAssignments.find(
     (assignment) =>
       assignment.cabinetId === cabinet.$id &&
+      assignment.assigneeType === input.assigneeType &&
       doTimeRangesOverlap(assignment.startTime, assignment.endTime, input.startTime, input.endTime),
   );
 
-  if (cabinetConflict) {
-    throw new Error(`Cabinetul ${cabinet.identifier || cabinet.name} are deja programare între ${cabinetConflict.startTime} și ${cabinetConflict.endTime}.`);
+  if (overlappingCabinetRoleConflict) {
+    throw new Error(
+      `Cabinetul ${cabinet.identifier || cabinet.name} are deja ${getCabinetAssigneeTypeLabel(input.assigneeType).toLowerCase()} programat între ${overlappingCabinetRoleConflict.startTime} și ${overlappingCabinetRoleConflict.endTime}.`,
+    );
   }
 
   if (input.assigneeType === 'doctor' && input.doctorId) {
@@ -354,6 +576,23 @@ function validateAssignmentConflicts(
 
     if (doctorConflict) {
       throw new Error(`Medicul selectat este deja programat în cabinetul ${doctorConflict.cabinetIdentifier || doctorConflict.cabinetName} pentru intervalul ${doctorConflict.startTime}-${doctorConflict.endTime}.`);
+    }
+  }
+
+  if (
+    (input.assigneeType === 'assistant' || input.assigneeType === 'cabinet-chief') &&
+    input.volunteerId
+  ) {
+    const volunteerConflict = sameDayAssignments.find(
+      (assignment) =>
+        assignment.volunteerId === input.volunteerId &&
+        doTimeRangesOverlap(assignment.startTime, assignment.endTime, input.startTime, input.endTime),
+    );
+
+    if (volunteerConflict) {
+      throw new Error(
+        `${getCabinetAssignmentAssigneeName(volunteerConflict) || 'Voluntarul selectat'} este deja programat în cabinetul ${volunteerConflict.cabinetIdentifier || volunteerConflict.cabinetName} pentru intervalul ${volunteerConflict.startTime}-${volunteerConflict.endTime}.`,
+      );
     }
   }
 
@@ -372,9 +611,50 @@ function validateAssignmentConflicts(
   }
 }
 
+function ensureCabinetDisciplineSlotExists(
+  assignments: ProjectCabinetAssignment[],
+  input: CabinetAssignmentFormInput,
+  cabinet: ProjectCabinet,
+) {
+  if (input.assigneeType === 'discipline') {
+    return;
+  }
+
+  const matchingDisciplineSlot = assignments.find(
+    (assignment) =>
+      assignment.cabinetId === cabinet.$id &&
+      assignment.assigneeType === 'discipline' &&
+      assignment.assignmentDate === input.assignmentDate &&
+      assignment.startTime === input.startTime &&
+      assignment.endTime === input.endTime,
+  );
+
+  if (!matchingDisciplineSlot) {
+    throw new Error(
+      `Cabinetul ${cabinet.identifier || cabinet.name} nu are un slot de specialitate definit pentru ${input.assignmentDate} ${input.startTime}-${input.endTime}. Definește mai întâi slotul în structura cabinetului.`,
+    );
+  }
+}
+
 function ensureDoctorIsAssignable(doctor: DoctorRecord) {
   if (doctor.status === 'archived') {
     throw new Error('Medicul selectat este arhivat și nu poate fi asignat.');
+  }
+}
+
+function ensureVolunteerIsAssignable(
+  volunteer: ProjectVolunteerRecord,
+  projectId: string,
+  assigneeType: Extract<ProjectCabinetAssignment['assigneeType'], 'assistant' | 'cabinet-chief'>,
+) {
+  if (volunteer.projectId !== projectId) {
+    throw new Error('Voluntarul selectat nu aparține proiectului curent.');
+  }
+
+  if (volunteer.status === 'archived') {
+    throw new Error(
+      `${assigneeType === 'assistant' ? 'Asistentul medical' : 'Șeful de cabinet'} selectat este arhivat și nu poate fi alocat.`,
+    );
   }
 }
 

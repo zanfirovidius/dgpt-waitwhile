@@ -23,6 +23,13 @@ import {
 } from '@/lib/cabinet-utils';
 import type { DoctorRecord } from '@/lib/doctor-types';
 
+type CabinetVolunteerRecord = {
+  $id?: string;
+  firstName?: string;
+  lastName?: string;
+  activityCategory?: string;
+};
+
 type AdminClient = Awaited<ReturnType<typeof createAdminClient>>;
 type DatabasesClient = AdminClient['databases'];
 type StorageClient = AdminClient['storage'];
@@ -73,6 +80,9 @@ const ASSIGNMENT_ATTRIBUTES = [
   { key: 'assigneeType', type: 'string', size: 24 },
   { key: 'doctorId', type: 'string', size: 128 },
   { key: 'doctorName', type: 'string', size: 255 },
+  { key: 'volunteerId', type: 'string', size: 128 },
+  { key: 'volunteerName', type: 'string', size: 255 },
+  { key: 'volunteerCategory', type: 'string', size: 128 },
   { key: 'responsibleName', type: 'string', size: 255 },
   { key: 'notes', type: 'string', size: 1500 },
   { key: 'createdAt', type: 'string', size: 64 },
@@ -143,6 +153,13 @@ const INDEXES = [
     key: 'idx_asg_doc',
     type: 'key',
     attributes: ['doctorId'],
+    orders: ['asc'],
+  },
+  {
+    collectionId: PROJECT_CABINET_ASSIGNMENTS_COLLECTION_ID,
+    key: 'idx_asg_vol',
+    type: 'key',
+    attributes: ['volunteerId'],
     orders: ['asc'],
   },
   {
@@ -458,8 +475,9 @@ export async function createProjectCabinetAssignmentDocument(
   actorUserId: string,
   cabinet: ProjectCabinet,
   doctor?: DoctorRecord | null,
+  volunteer?: CabinetVolunteerRecord | null,
 ) {
-  const payload = buildProjectCabinetAssignmentPayload(input, actorUserId, cabinet, doctor);
+  const payload = buildProjectCabinetAssignmentPayload(input, actorUserId, cabinet, doctor, volunteer);
   const created = await databases.createDocument(
     DATABASE_ID,
     PROJECT_CABINET_ASSIGNMENTS_COLLECTION_ID,
@@ -477,9 +495,10 @@ export async function updateProjectCabinetAssignmentDocument(
   actorUserId: string,
   cabinet: ProjectCabinet,
   doctor?: DoctorRecord | null,
+  volunteer?: CabinetVolunteerRecord | null,
 ) {
   const existing = await getProjectCabinetAssignment(databases, assignmentId);
-  const payload = buildProjectCabinetAssignmentPayload(input, actorUserId, cabinet, doctor, existing);
+  const payload = buildProjectCabinetAssignmentPayload(input, actorUserId, cabinet, doctor, volunteer, existing);
   const updated = await databases.updateDocument(
     DATABASE_ID,
     PROJECT_CABINET_ASSIGNMENTS_COLLECTION_ID,
@@ -530,6 +549,7 @@ function buildProjectCabinetAssignmentPayload(
   actorUserId: string,
   cabinet: ProjectCabinet,
   doctor?: DoctorRecord | null,
+  volunteer?: CabinetVolunteerRecord | null,
   existing?: ProjectCabinetAssignment,
 ) {
   const sanitized = sanitizeCabinetAssignmentInput(input);
@@ -541,8 +561,6 @@ function buildProjectCabinetAssignmentPayload(
     cabinetId: sanitized.cabinetId,
     cabinetName: cabinet.name,
     cabinetIdentifier: cabinet.identifier,
-    cabinetSpecialty: sanitized.cabinetSpecialty || cabinet.specialty || '',
-    materialsJson: serializeCabinetMaterials(sanitized.materials),
     assignmentDate: sanitized.assignmentDate,
     startTime: sanitized.startTime,
     endTime: sanitized.endTime,
@@ -550,13 +568,40 @@ function buildProjectCabinetAssignmentPayload(
     assigneeType,
     doctorId: assigneeType === 'doctor' ? sanitized.doctorId || '' : '',
     doctorName: assigneeType === 'doctor' ? doctor?.fullName || existing?.doctorName || '' : '',
+    volunteerId:
+      assigneeType === 'assistant' || assigneeType === 'cabinet-chief'
+        ? sanitized.volunteerId || ''
+        : '',
+    volunteerName:
+      assigneeType === 'assistant' || assigneeType === 'cabinet-chief'
+        ? buildCabinetVolunteerDisplayName(volunteer) || existing?.volunteerName || ''
+        : '',
+    volunteerCategory:
+      assigneeType === 'assistant' || assigneeType === 'cabinet-chief'
+        ? sanitizeResponsibleName(volunteer?.activityCategory) || existing?.volunteerCategory || ''
+        : '',
     responsibleName: assigneeType === 'responsible' ? sanitizeResponsibleName(sanitized.responsibleName) : '',
+    cabinetSpecialty:
+      assigneeType === 'discipline'
+        ? sanitized.cabinetSpecialty || cabinet.specialty || ''
+        : '',
+    materialsJson:
+      assigneeType === 'discipline'
+        ? serializeCabinetMaterials(sanitized.materials)
+        : '[]',
     notes: sanitized.notes || '',
     createdAt: existing?.createdAt || now,
     updatedAt: now,
     createdByUserId: existing?.createdByUserId || actorUserId,
     updatedByUserId: actorUserId,
   };
+}
+
+function buildCabinetVolunteerDisplayName(volunteer?: CabinetVolunteerRecord | null) {
+  return [volunteer?.firstName || '', volunteer?.lastName || '']
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function ensureCollection(

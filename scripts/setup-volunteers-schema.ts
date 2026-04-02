@@ -1,6 +1,5 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
-const { Client, Databases, Permission, Role, Query } = require('node-appwrite');
-const dotenv = require('dotenv');
+import { Client, Databases, Permission, Query, Role } from 'node-appwrite';
+import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
 dotenv.config({ path: '.env' });
@@ -44,6 +43,8 @@ async function setupVolunteersSchema() {
   const VOLUNTEER_SETTINGS_COLLECTION_ID =
     process.env.NEXT_PUBLIC_APPWRITE_PROJECT_VOLUNTEER_SETTINGS_COLLECTION_ID || 'project_volunteer_settings';
   const VOLUNTEERS_COLLECTION_ID = 'project_volunteers';
+  const VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID =
+    process.env.NEXT_PUBLIC_APPWRITE_VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID || 'volunteer_portal_tokens';
   const ATTENDANCE_ENTRIES_COLLECTION_ID =
     process.env.NEXT_PUBLIC_APPWRITE_VOLUNTEER_ATTENDANCE_ENTRIES_COLLECTION_ID || 'volunteer_attendance_entries';
 
@@ -154,6 +155,48 @@ async function setupVolunteersSchema() {
 
     for (const index of indexes) {
       await ensureIndex(databases, DATABASE_ID, VOLUNTEERS_COLLECTION_ID, index);
+    }
+
+    console.log(`\n🚀 Creating collection "${VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID}"...`);
+    await createCollectionIfMissing(
+      databases,
+      DATABASE_ID,
+      VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID,
+      'Volunteer Portal Tokens',
+      [
+        Permission.read(Role.team(ADMIN_TEAM_ID)),
+        Permission.write(Role.team(ADMIN_TEAM_ID)),
+        Permission.create(Role.team(ADMIN_TEAM_ID)),
+        Permission.update(Role.team(ADMIN_TEAM_ID)),
+        Permission.delete(Role.team(ADMIN_TEAM_ID)),
+      ],
+    );
+
+    console.log(`\n--- Setting up attributes for "${VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID}" ---`);
+    const volunteerPortalTokenAttributes: AttributeSpec[] = [
+      { key: 'volunteerId', type: 'string', size: 128 },
+      { key: 'projectId', type: 'string', size: 128 },
+      { key: 'channel', type: 'string', size: 16 },
+      { key: 'identifier', type: 'string', size: 191 },
+      { key: 'tokenHash', type: 'string', size: 128 },
+      { key: 'expiresAt', type: 'string', size: 64 },
+      { key: 'usedAt', type: 'string', size: 64 },
+      { key: 'createdAt', type: 'string', size: 64 },
+    ];
+
+    for (const attribute of volunteerPortalTokenAttributes) {
+      await ensureVolunteerAttribute(databases, DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID, attribute);
+    }
+
+    console.log('\n--- Setting up volunteer portal token indexes ---');
+    const volunteerPortalTokenIndexes: IndexSpec[] = [
+      { key: 'idx_vpt_vol', type: 'key', attrs: ['volunteerId', 'projectId', 'channel'] },
+      { key: 'idx_vpt_id', type: 'key', attrs: ['identifier'] },
+      { key: 'idx_vpt_exp', type: 'key', attrs: ['expiresAt'] },
+    ];
+
+    for (const index of volunteerPortalTokenIndexes) {
+      await ensureIndex(databases, DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID, index);
     }
 
     console.log(`\n📝 Ensuring "${ATTENDANCE_ENTRIES_COLLECTION_ID}" has "projectVolunteerId"...`);

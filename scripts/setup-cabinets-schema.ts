@@ -68,6 +68,9 @@ const ASSIGNMENT_ATTRIBUTES = [
   ['assigneeType', 'string', 24],
   ['doctorId', 'string', 128],
   ['doctorName', 'string', 255],
+  ['volunteerId', 'string', 128],
+  ['volunteerName', 'string', 255],
+  ['volunteerCategory', 'string', 128],
   ['responsibleName', 'string', 255],
   ['notes', 'string', 1500],
   ['createdAt', 'string', 64],
@@ -98,6 +101,7 @@ const INDEXES = [
   [PROJECT_CABINET_ASSIGNMENTS_COLLECTION_ID, 'idx_asg_day', ['projectId', 'assignmentDate'], ['asc', 'asc']],
   [PROJECT_CABINET_ASSIGNMENTS_COLLECTION_ID, 'idx_asg_cab', ['cabinetId', 'assignmentDate'], ['asc', 'asc']],
   [PROJECT_CABINET_ASSIGNMENTS_COLLECTION_ID, 'idx_asg_doc', ['doctorId'], ['asc']],
+  [PROJECT_CABINET_ASSIGNMENTS_COLLECTION_ID, 'idx_asg_vol', ['volunteerId'], ['asc']],
   [PROJECT_CABINET_ASSIGNMENTS_COLLECTION_ID, 'idx_asg_slot', ['projectId', 'slotKey'], ['asc', 'asc']],
   [CABINET_PRINT_TEMPLATES_COLLECTION_ID, 'idx_cpt_scope', ['scopeType', 'projectId'], ['asc', 'asc']],
 ] as const;

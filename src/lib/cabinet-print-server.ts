@@ -78,9 +78,12 @@ export async function getCabinetDailyPlanContext(
     assignmentDate: string;
     startTime: string;
     endTime: string;
-    assigneeType: 'doctor' | 'responsible' | 'unassigned';
+    assigneeType: 'doctor' | 'assistant' | 'cabinet-chief' | 'responsible' | 'unassigned';
     doctorId?: string;
     doctorName?: string;
+    volunteerId?: string;
+    volunteerName?: string;
+    volunteerCategory?: string;
     responsibleName?: string;
     notes?: string;
   }>;

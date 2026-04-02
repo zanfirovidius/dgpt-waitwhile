@@ -1,7 +1,8 @@
 'use server';
 
+import { createHash, randomInt } from 'crypto';
 import { cookies } from 'next/headers';
-import { Query } from 'node-appwrite';
+import { ID, MessagingProviderType, Permission, Query, Role } from 'node-appwrite';
 import { getProjectAttendanceConfig } from '@/app/actions/attendance-config';
 import { getVolunteerAttendanceEntries } from '@/app/actions/attendance';
 import {
@@ -23,13 +24,19 @@ import {
   sanitizeVolunteerValue,
 } from '@/lib/volunteer-utils';
 import {
+  sendDirectSmsMessage,
   sendVolunteerPortalSmsCode,
-  verifyVolunteerPortalSmsCode,
 } from '@/lib/sms-provider';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+const ADMIN_TEAM_ID = process.env.NEXT_PUBLIC_APPWRITE_ADMIN_TEAM_ID!;
 const PROJECTS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!;
 const VOLUNTEERS_COLLECTION_ID = 'project_volunteers';
+const VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID =
+  process.env.NEXT_PUBLIC_APPWRITE_VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID || 'volunteer_portal_tokens';
+const VOLUNTEER_PORTAL_CODE_MAX_AGE = 15 * 60;
+
+type VolunteerPortalChannel = 'email' | 'sms';
 
 type PortalProject = {
   $id: string;
@@ -109,26 +116,62 @@ export async function getVolunteerPortalState(
 export async function requestVolunteerPortalAccess(data: {
   projectSlug: string;
   identifier: string;
-}): Promise<PortalActionResult<{ maskedPhone: string }>> {
+}): Promise<PortalActionResult<{ channel: VolunteerPortalChannel; maskedDestination: string }>> {
   try {
+    const admin = await createAdminClient();
+    await ensureVolunteerPortalTokenSchema(admin.databases);
+
     const project = await findProjectBySlug(data.projectSlug);
-    const volunteer = await findVolunteerByIdentifier(project.$id, data.identifier);
-
-    if (!volunteer.phone) {
-      throw new Error('Voluntarul nu are număr de telefon configurat pentru acest proiect.');
+    const match = await findVolunteerByIdentifier(project.$id, data.identifier);
+    const volunteerId = match.volunteer.$id || '';
+    if (!volunteerId) {
+      throw new Error('Voluntarul nu a fost găsit.');
     }
 
-    const phoneNumber = normalizeVolunteerPhoneForMatch(volunteer.phone);
-    if (!phoneNumber) {
-      throw new Error('Numărul de telefon al voluntarului nu este valid pentru OTP.');
-    }
+    await ensureVolunteerPortalRequestCooldown(admin.databases, volunteerId, project.$id, match.channel);
+    await cleanupVolunteerPortalTokens(admin.databases, volunteerId, project.$id, match.channel);
 
-    await sendVolunteerPortalSmsCode(phoneNumber);
+    const code = generateVolunteerPortalCode();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + VOLUNTEER_PORTAL_CODE_MAX_AGE * 1000).toISOString();
+
+    const tokenDoc = await admin.databases.createDocument(
+      DATABASE_ID,
+      VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID,
+      ID.unique(),
+      {
+        volunteerId,
+        projectId: project.$id,
+        channel: match.channel,
+        identifier: match.normalizedIdentifier,
+        tokenHash: hashVolunteerPortalCode(volunteerId, project.$id, match.channel, match.normalizedIdentifier, code),
+        expiresAt,
+        usedAt: '',
+        createdAt: now.toISOString(),
+      },
+    );
+
+    try {
+      if (match.channel === 'sms') {
+        await sendVolunteerPortalAccessSms(match.destination, code);
+      } else {
+        await sendVolunteerPortalAccessEmail({
+          volunteerId,
+          volunteerName: buildVolunteerFullName(match.volunteer),
+          email: match.destination,
+          code,
+        });
+      }
+    } catch (deliveryError) {
+      await admin.databases.deleteDocument(DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID, tokenDoc.$id);
+      throw deliveryError;
+    }
 
     return {
       success: true,
       data: {
-        maskedPhone: maskPhoneNumber(volunteer.phone),
+        channel: match.channel,
+        maskedDestination: match.maskedDestination,
       },
     };
   } catch (error: unknown) {
@@ -179,28 +222,67 @@ export async function verifyVolunteerPortalAccess(data: {
   code: string;
 }): Promise<PortalActionResult<{ redirectTo: string }>> {
   try {
-    const { databases } = await createAdminClient();
+    const admin = await createAdminClient();
+    await ensureVolunteerPortalTokenSchema(admin.databases);
+
     const project = await findProjectBySlug(data.projectSlug);
-    const volunteer = await findVolunteerByIdentifier(project.$id, data.identifier);
+    const match = await findVolunteerByIdentifier(project.$id, data.identifier);
+    const volunteer = match.volunteer;
 
     if (!volunteer.$id) {
       throw new Error('Voluntarul nu a fost găsit.');
     }
 
-    const phoneNumber = normalizeVolunteerPhoneForMatch(volunteer.phone);
-    if (!phoneNumber) {
-      throw new Error('Voluntarul nu are un număr de telefon valid pentru verificare.');
-    }
+    const tokensRes = await admin.databases.listDocuments(DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID, [
+      Query.equal('volunteerId', volunteer.$id),
+      Query.equal('projectId', project.$id),
+      Query.equal('channel', match.channel),
+      Query.orderDesc('$createdAt'),
+      Query.limit(20),
+    ]);
 
-    const verification = await verifyVolunteerPortalSmsCode(
-      phoneNumber,
-      sanitizeVolunteerValue(data.code, 16),
+    const sanitizedCode = sanitizeVolunteerValue(data.code, 32).replace(/\s+/g, '');
+    const tokenHash = hashVolunteerPortalCode(
+      volunteer.$id,
+      project.$id,
+      match.channel,
+      match.normalizedIdentifier,
+      sanitizedCode,
     );
-    if (!verification.success) {
-      throw new Error(verification.error);
+    const tokenDoc = tokensRes.documents.find((document) => {
+      const payload = JSON.parse(JSON.stringify(document)) as {
+        tokenHash?: string;
+        identifier?: string;
+      };
+      return payload.tokenHash === tokenHash && payload.identifier === match.normalizedIdentifier;
+    });
+
+    if (!tokenDoc) {
+      throw new Error('Codul introdus este invalid.');
     }
 
-    await ensureVolunteerProfileAttributes(databases);
+    const tokenPayload = JSON.parse(JSON.stringify(tokenDoc)) as {
+      $id: string;
+      expiresAt?: string;
+      usedAt?: string;
+    };
+
+    if (tokenPayload.usedAt) {
+      throw new Error('Codul a fost deja folosit. Cere unul nou.');
+    }
+
+    if (!tokenPayload.expiresAt || new Date(tokenPayload.expiresAt).getTime() <= Date.now()) {
+      throw new Error('Codul a expirat. Cere unul nou.');
+    }
+
+    await admin.databases.updateDocument(
+      DATABASE_ID,
+      VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID,
+      tokenPayload.$id,
+      { usedAt: new Date().toISOString() },
+    );
+
+    await ensureVolunteerProfileAttributes(admin.databases);
 
     const cookieStore = await cookies();
     cookieStore.set(
@@ -324,32 +406,48 @@ async function findProjectBySlug(projectSlug: string): Promise<PortalProject> {
   return JSON.parse(JSON.stringify(res.documents[0])) as PortalProject;
 }
 
-async function findVolunteerByIdentifier(projectId: string, identifier: string): Promise<ProjectVolunteer> {
+async function findVolunteerByIdentifier(projectId: string, identifier: string) {
   const { databases } = await createAdminClient();
-  const normalizedEmail = sanitizeVolunteerEmail(identifier);
-  const normalizedPhone = normalizeVolunteerPhoneForMatch(identifier);
+  const resolvedIdentifier = resolveVolunteerPortalIdentifier(identifier);
 
   const res = await databases.listDocuments(DATABASE_ID, VOLUNTEERS_COLLECTION_ID, [
     Query.equal('projectId', projectId),
     Query.limit(500),
   ]);
 
-  const volunteers = JSON.parse(JSON.stringify(res.documents)) as ProjectVolunteer[];
-  const volunteer = volunteers.find((item) => {
-    if (item.status === 'archived') {
-      return false;
+  const volunteers = (JSON.parse(JSON.stringify(res.documents)) as ProjectVolunteer[]).filter(
+    (item) => item.status !== 'archived',
+  );
+  const matches = volunteers.filter((item) => {
+    if (resolvedIdentifier.channel === 'email') {
+      return sanitizeVolunteerEmail(item.email) === resolvedIdentifier.normalizedIdentifier;
     }
 
-    const matchesEmail = normalizedEmail && sanitizeVolunteerEmail(item.email) === normalizedEmail;
-    const matchesPhone = normalizedPhone && normalizeVolunteerPhoneForMatch(item.phone) === normalizedPhone;
-    return matchesEmail || matchesPhone;
+    return normalizeVolunteerPhoneForMatch(item.phone) === resolvedIdentifier.normalizedIdentifier;
   });
 
-  if (!volunteer) {
+  if (matches.length === 0) {
     throw new Error('Nu am găsit niciun voluntar cu acest email sau telefon în proiect.');
   }
 
-  return volunteer;
+  if (matches.length > 1) {
+    throw new Error('Există mai mulți voluntari cu acest contact în proiect. Verifică registrul voluntarilor.');
+  }
+
+  const volunteer = matches[0];
+  const destination = resolvedIdentifier.channel === 'email' ? volunteer.email || '' : volunteer.phone || '';
+  if (!destination) {
+    throw new Error('Voluntarul nu are contactul selectat configurat.');
+  }
+
+  return {
+    volunteer,
+    channel: resolvedIdentifier.channel,
+    normalizedIdentifier: resolvedIdentifier.normalizedIdentifier,
+    destination,
+    maskedDestination:
+      resolvedIdentifier.channel === 'email' ? maskEmail(destination) : maskPhoneNumber(destination),
+  };
 }
 
 function buildVolunteerAttendanceUrl(
@@ -374,6 +472,337 @@ function buildVolunteerAttendanceUrl(
   return `/a/${projectSlug}/attendance?${params.toString()}`;
 }
 
+async function ensureVolunteerPortalRequestCooldown(
+  databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+  volunteerId: string,
+  projectId: string,
+  channel: VolunteerPortalChannel,
+) {
+  const recent = await databases.listDocuments(DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID, [
+    Query.equal('volunteerId', volunteerId),
+    Query.equal('projectId', projectId),
+    Query.equal('channel', channel),
+    Query.orderDesc('$createdAt'),
+    Query.limit(1),
+  ]);
+
+  if (recent.total === 0) {
+    return;
+  }
+
+  const lastRequest = JSON.parse(JSON.stringify(recent.documents[0])) as { createdAt?: string };
+  if (!lastRequest.createdAt) {
+    return;
+  }
+
+  const elapsed = Date.now() - new Date(lastRequest.createdAt).getTime();
+  if (elapsed < 60_000) {
+    throw new Error('Ai cerut deja un cod recent. Încearcă din nou peste câteva secunde.');
+  }
+}
+
+async function cleanupVolunteerPortalTokens(
+  databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+  volunteerId: string,
+  projectId: string,
+  channel: VolunteerPortalChannel,
+) {
+  const existing = await databases.listDocuments(DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID, [
+    Query.equal('volunteerId', volunteerId),
+    Query.equal('projectId', projectId),
+    Query.equal('channel', channel),
+    Query.limit(50),
+  ]);
+
+  await Promise.all(
+    existing.documents.map((document) =>
+      databases.deleteDocument(DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID, document.$id),
+    ),
+  );
+}
+
+async function sendVolunteerPortalAccessSms(phoneNumber: string, code: string) {
+  await sendDirectSmsMessage(
+    normalizeVolunteerPhoneForMatch(phoneNumber),
+    buildVolunteerPortalSmsTemplate().replace('{{code}}', code),
+  );
+}
+
+async function sendVolunteerPortalAccessEmail(data: {
+  volunteerId: string;
+  volunteerName: string;
+  email: string;
+  code: string;
+}) {
+  const admin = await createAdminClient();
+  const userId = buildVolunteerPortalShadowUserId(data.volunteerId);
+  const targetId = buildVolunteerPortalEmailTargetId(data.volunteerId);
+
+  await ensureVolunteerPortalShadowUser(admin.users, userId, data.volunteerName);
+  await ensureVolunteerPortalEmailTarget(admin.users, userId, targetId, data.email, data.volunteerName);
+
+  const html = [
+    `<p>Bună, ${escapeHtml(data.volunteerName)}.</p>`,
+    '<p>Codul tău de acces pentru portalul voluntarului este:</p>',
+    `<p style="font-size: 28px; font-weight: 700; letter-spacing: 0.25em;">${escapeHtml(data.code)}</p>`,
+    '<p>Codul este valabil 15 minute și poate fi folosit o singură dată.</p>',
+  ].join('');
+
+  await admin.messaging.createEmail({
+    messageId: ID.unique(),
+    subject: 'Cod acces portal voluntar DGPT',
+    content: html,
+    targets: [targetId],
+    html: true,
+  });
+}
+
+async function ensureVolunteerPortalShadowUser(
+  users: Awaited<ReturnType<typeof createAdminClient>>['users'],
+  userId: string,
+  volunteerName: string,
+) {
+  try {
+    await users.get({ userId });
+  } catch (error: unknown) {
+    if (getErrorCode(error) !== 404) {
+      throw error;
+    }
+
+    await users.create({
+      userId,
+      name: `Portal voluntar ${volunteerName}`.slice(0, 128),
+    });
+  }
+}
+
+async function ensureVolunteerPortalEmailTarget(
+  users: Awaited<ReturnType<typeof createAdminClient>>['users'],
+  userId: string,
+  targetId: string,
+  email: string,
+  volunteerName: string,
+) {
+  try {
+    await users.getTarget({ userId, targetId });
+    await users.updateTarget({
+      userId,
+      targetId,
+      identifier: email,
+      name: `Email ${volunteerName}`.slice(0, 128),
+    });
+  } catch (error: unknown) {
+    if (getErrorCode(error) !== 404) {
+      throw error;
+    }
+
+    await users.createTarget({
+      userId,
+      targetId,
+      providerType: MessagingProviderType.Email,
+      identifier: email,
+      name: `Email ${volunteerName}`.slice(0, 128),
+    });
+  }
+}
+
+async function ensureVolunteerPortalTokenSchema(
+  databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+) {
+  await ensureVolunteerPortalTokensCollection(databases);
+  await ensureVolunteerPortalTokenAttributes(databases);
+  await ensureVolunteerPortalTokenIndexes(databases);
+}
+
+async function ensureVolunteerPortalTokensCollection(
+  databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+) {
+  try {
+    await databases.getCollection(DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID);
+  } catch (error: unknown) {
+    if (getErrorCode(error) !== 404) {
+      throw error;
+    }
+
+    await databases.createCollection(
+      DATABASE_ID,
+      VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID,
+      'Volunteer Portal Tokens',
+      [
+        Permission.read(Role.team(ADMIN_TEAM_ID)),
+        Permission.create(Role.team(ADMIN_TEAM_ID)),
+        Permission.update(Role.team(ADMIN_TEAM_ID)),
+        Permission.delete(Role.team(ADMIN_TEAM_ID)),
+      ],
+    );
+  }
+}
+
+async function ensureVolunteerPortalTokenAttributes(
+  databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+) {
+  const attributes = [
+    { key: 'volunteerId', size: 128 },
+    { key: 'projectId', size: 128 },
+    { key: 'channel', size: 16 },
+    { key: 'identifier', size: 191 },
+    { key: 'tokenHash', size: 128 },
+    { key: 'expiresAt', size: 64 },
+    { key: 'usedAt', size: 64 },
+    { key: 'createdAt', size: 64 },
+  ] as const;
+  const list = await databases.listAttributes(DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID);
+  const existing = new Map(list.attributes.map((attribute) => [attribute.key, attribute]));
+  const createdKeys: string[] = [];
+
+  for (const attribute of attributes) {
+    if (existing.has(attribute.key)) {
+      continue;
+    }
+
+    await databases.createStringAttribute(
+      DATABASE_ID,
+      VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID,
+      attribute.key,
+      attribute.size,
+      false,
+    );
+    createdKeys.push(attribute.key);
+  }
+
+  for (const key of createdKeys) {
+    await waitForVolunteerPortalAttribute(databases, key);
+  }
+}
+
+async function ensureVolunteerPortalTokenIndexes(
+  databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+) {
+  const indexes = [
+    { key: 'idx_vpt_vol', attributes: ['volunteerId', 'projectId', 'channel'], orders: ['asc', 'asc', 'asc'] },
+    { key: 'idx_vpt_id', attributes: ['identifier'], orders: ['asc'] },
+    { key: 'idx_vpt_exp', attributes: ['expiresAt'], orders: ['asc'] },
+  ] as const;
+
+  for (const index of indexes) {
+    try {
+      await (databases as unknown as {
+        createIndex: (
+          databaseId: string,
+          collectionId: string,
+          key: string,
+          type: string,
+          attributes: string[],
+          orders: string[],
+        ) => Promise<unknown>;
+      }).createIndex(
+        DATABASE_ID,
+        VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID,
+        index.key,
+        'key',
+        [...index.attributes],
+        [...index.orders],
+      );
+    } catch (error: unknown) {
+      if (getErrorCode(error) !== 409) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function waitForVolunteerPortalAttribute(
+  databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+  key: string,
+) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const attribute = await databases.getAttribute(DATABASE_ID, VOLUNTEER_PORTAL_TOKENS_COLLECTION_ID, key);
+
+    if (attribute.status === 'available') {
+      return;
+    }
+
+    if (attribute.status === 'failed' || attribute.status === 'stuck') {
+      throw new Error(`Volunteer portal attribute "${key}" is ${attribute.status}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  throw new Error(`Volunteer portal attribute "${key}" is still processing.`);
+}
+
+function resolveVolunteerPortalIdentifier(identifier: string) {
+  const raw = sanitizeVolunteerValue(identifier, 191);
+  const looksEmail = raw.includes('@');
+  const normalizedEmail = looksEmail ? sanitizeVolunteerEmail(raw) : '';
+  const normalizedPhone = looksEmail ? '' : normalizeVolunteerPhoneForMatch(raw);
+
+  if (normalizedEmail) {
+    return {
+      channel: 'email' as const,
+      normalizedIdentifier: normalizedEmail,
+    };
+  }
+
+  if (normalizedPhone) {
+    return {
+      channel: 'sms' as const,
+      normalizedIdentifier: normalizedPhone,
+    };
+  }
+
+  throw new Error('Introdu un email sau un număr de telefon valid.');
+}
+
+function generateVolunteerPortalCode() {
+  return String(randomInt(100000, 1_000_000));
+}
+
+function hashVolunteerPortalCode(
+  volunteerId: string,
+  projectId: string,
+  channel: VolunteerPortalChannel,
+  identifier: string,
+  code: string,
+) {
+  return createHash('sha256')
+    .update(`${volunteerId}:${projectId}:${channel}:${identifier}:${code}:${process.env.VOLUNTEER_PORTAL_SECRET || 'dgpt-volunteer-portal'}`)
+    .digest('hex');
+}
+
+function buildVolunteerPortalShadowUserId(volunteerId: string) {
+  return `volprt_${volunteerId}`.slice(0, 36);
+}
+
+function buildVolunteerPortalEmailTargetId(volunteerId: string) {
+  return `volem_${volunteerId}`.slice(0, 36);
+}
+
+function buildVolunteerPortalSmsTemplate() {
+  return (
+    process.env.VOLUNTEER_PORTAL_SMS_TEMPLATE ||
+    'Codul tău DGPT pentru portalul voluntarului este {{code}}. Valabil 15 minute.'
+  );
+}
+
+function buildVolunteerFullName(volunteer?: Pick<ProjectVolunteer, 'firstName' | 'lastName'> | null) {
+  return [volunteer?.firstName || '', volunteer?.lastName || '']
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'voluntar';
+}
+
+function maskEmail(value?: string) {
+  const [localPart, domain] = (value || '').split('@');
+  if (!localPart || !domain) {
+    return value || 'email';
+  }
+
+  const visibleLocal = localPart.length <= 2 ? `${localPart[0] || ''}•` : `${localPart.slice(0, 2)}•••`;
+  return `${visibleLocal}@${domain}`;
+}
+
 function maskPhoneNumber(value?: string) {
   const digits = (value || '').replace(/\D+/g, '');
   if (digits.length <= 4) {
@@ -381,4 +810,21 @@ function maskPhoneNumber(value?: string) {
   }
 
   return `${digits.slice(0, 2)}••••${digits.slice(-2)}`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function getErrorCode(error: unknown) {
+  if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'number') {
+    return error.code;
+  }
+
+  return undefined;
 }

@@ -4,6 +4,7 @@ import { AlertCircle, Package, Stethoscope } from 'lucide-react';
 import { createAdminClient, createSessionClient } from '@/lib/appwrite-server';
 import { ensureCabinetsSchema } from '@/lib/cabinets-server';
 import { getCabinetDailyPlanContext } from '@/lib/cabinet-print-server';
+import { buildCabinetRoleSummaryLines } from '@/lib/cabinet-print-utils';
 import { PrintToolbar } from '@/components/PrintToolbar';
 
 type PageProps = {
@@ -90,12 +91,18 @@ export default async function CabinetChecklistPrintPage({ params, searchParams }
                     </div>
                   </div>
 
-                  <div className="rounded-[1.25rem] border border-base-300 bg-base-50 px-4 py-3 text-sm">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">
-                      Alocat în interval
+                    <div className="rounded-[1.25rem] border border-base-300 bg-base-50 px-4 py-3 text-sm">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">
+                        Echipă alocată
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {buildCabinetRoleSummaryLines(packet.roleAssignments).map((line) => (
+                          <div key={`${packet.assignmentId}-${line}`} className="text-sm font-semibold text-base-content">
+                            {line}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="mt-1 text-base font-black text-base-content">{packet.assigneeDisplayName}</div>
-                  </div>
                 </div>
 
                 <div className="mt-5 grid gap-5 xl:grid-cols-[1.2fr,0.8fr]">

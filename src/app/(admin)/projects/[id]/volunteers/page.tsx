@@ -3,10 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { format, parseISO } from 'date-fns';
+import { ro } from 'date-fns/locale';
 import { 
   ArrowLeft, Users, Search, Filter, Plus, Upload, 
   Trash2, Edit2, XCircle, 
-  UserPlus, Mail, Phone, ExternalLink, RefreshCw,
+  UserPlus, Mail, Phone, ExternalLink, RefreshCw, Stethoscope, CalendarDays, Clock,
 } from 'lucide-react';
 import { getProject, Project } from '@/app/actions/projects';
 import { 
@@ -15,14 +17,33 @@ import {
   deleteVolunteer, 
   bulkDeleteVolunteers 
 } from '@/app/actions/volunteers';
+import { getProjectCabinetAssignments } from '@/app/actions/cabinets';
+import { getDoctorsRegistry } from '@/app/actions/doctors';
 import { 
     createWaitwhileAccountAction, 
     deleteWaitwhileAccountAction,
     bulkCreateWaitwhileAccountsAction,
     bulkDeleteWaitwhileAccountsAction
 } from '@/app/actions/volunteer-waitwhile';
+import { DoctorAvatar } from '@/components/doctors/DoctorAvatar';
 import { VolunteerModal } from '@/components/volunteers/VolunteerModal';
 import { ImportVolunteersModal } from '@/components/volunteers/ImportVolunteersModal';
+import type { ProjectCabinetAssignment } from '@/lib/cabinet-types';
+import type { DoctorRecord } from '@/lib/doctor-types';
+
+type AssignedDoctorSummary = {
+  id: string;
+  doctor: Pick<DoctorRecord, '$id' | 'fullName' | 'profileImageUrl' | 'profileImageUploadedAt'> | null;
+  doctorId?: string;
+  fullName: string;
+  professionalGrade?: string;
+  specialty?: string;
+  phone?: string;
+  email?: string;
+  assignmentCount: number;
+  cabinetCount: number;
+  assignments: ProjectCabinetAssignment[];
+};
 
 export default function VolunteersPage() {
   const params = useParams();
@@ -30,6 +51,7 @@ export default function VolunteersPage() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [volunteers, setVolunteers] = useState<ProjectVolunteer[]>([]);
+  const [assignedDoctors, setAssignedDoctors] = useState<AssignedDoctorSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessingWW, setIsProcessingWW] = useState(false);
@@ -63,6 +85,67 @@ export default function VolunteersPage() {
     setIsLoading(false);
   }, [projectId, searchQuery, categoryFilter, waitwhileFilter]);
 
+  const fetchAssignedDoctors = useCallback(async () => {
+    if (!projectId) return;
+
+    const [assignmentsRes, doctorsRes] = await Promise.all([
+      getProjectCabinetAssignments(projectId),
+      getDoctorsRegistry(),
+    ]);
+
+    if (!assignmentsRes.success || !doctorsRes.success) {
+      return;
+    }
+
+    const doctorsById = new Map(doctorsRes.data.map((doctor) => [doctor.$id || '', doctor]));
+    const grouped = new Map<string, ProjectCabinetAssignment[]>();
+
+    for (const assignment of assignmentsRes.data) {
+      if (assignment.assigneeType !== 'doctor' || (!assignment.doctorId && !assignment.doctorName)) {
+        continue;
+      }
+
+      const key = assignment.doctorId || `name:${assignment.doctorName}`;
+      const current = grouped.get(key) || [];
+      current.push(assignment);
+      grouped.set(key, current);
+    }
+
+    const summaries = [...grouped.entries()]
+      .map(([key, items]) => {
+        const assignments = [...items].sort((left, right) => {
+          const leftKey = `${left.assignmentDate} ${left.startTime}`;
+          const rightKey = `${right.assignmentDate} ${right.startTime}`;
+          return leftKey.localeCompare(rightKey, 'ro');
+        });
+        const linkedDoctor = assignments[0]?.doctorId ? doctorsById.get(assignments[0].doctorId || '') : undefined;
+
+        return {
+          id: key,
+          doctor: linkedDoctor
+            ? {
+                $id: linkedDoctor.$id,
+                fullName: linkedDoctor.fullName,
+                profileImageUrl: linkedDoctor.profileImageUrl,
+                profileImageUploadedAt: linkedDoctor.profileImageUploadedAt,
+              }
+            : null,
+          doctorId: linkedDoctor?.$id || assignments[0]?.doctorId || '',
+          fullName: linkedDoctor?.fullName || assignments[0]?.doctorName || 'Medic neidentificat',
+          professionalGrade: linkedDoctor?.professionalGrade || '',
+          specialty: linkedDoctor?.specialty || assignments[0]?.cabinetSpecialty || '',
+          phone: linkedDoctor?.phone || '',
+          email: linkedDoctor?.email || '',
+          assignmentCount: assignments.length,
+          cabinetCount: new Set(assignments.map((assignment) => assignment.cabinetId)).size,
+          assignments,
+        } satisfies AssignedDoctorSummary;
+      })
+      .sort((left, right) => left.fullName.localeCompare(right.fullName, 'ro'));
+
+    setAssignedDoctors(summaries);
+  }, [projectId]);
+
   useEffect(() => {
     const init = async () => {
         if (!projectId) return;
@@ -71,10 +154,14 @@ export default function VolunteersPage() {
             setProject(projRes.data);
             setCategories(projRes.data.volunteerRoles || ['VOLUNTAR']);
         }
-        fetchVolunteers();
+        await Promise.all([fetchVolunteers(), fetchAssignedDoctors()]);
     };
-    init();
-  }, [projectId, fetchVolunteers]);
+    void init();
+  }, [projectId, fetchAssignedDoctors, fetchVolunteers]);
+
+  const handleRefresh = async () => {
+    await Promise.all([fetchVolunteers(), fetchAssignedDoctors()]);
+  };
 
   const toggleSelection = (id: string) => {
     setSelectedIds(prev => 
@@ -218,6 +305,97 @@ export default function VolunteersPage() {
         </div>
       </div>
 
+      <div className="bg-base-100 border border-base-200 rounded-3xl p-6 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-black text-base-content">
+              <Stethoscope className="text-secondary" size={18} />
+              Medici alocați în cabinete
+            </h2>
+            <p className="mt-1 text-sm text-base-content/60">
+              Rezumat rapid al medicilor programați în cabinetele proiectului, direct lângă registrul de voluntari.
+            </p>
+          </div>
+          <div className="badge badge-outline badge-lg">{assignedDoctors.length} medici</div>
+        </div>
+
+        <div className="mt-5 grid gap-3 xl:grid-cols-2">
+          {assignedDoctors.length > 0 ? (
+            assignedDoctors.map((doctor) => (
+              <div key={doctor.id} className="rounded-[1.5rem] border border-base-300 bg-base-50 p-4">
+                <div className="flex items-start gap-3">
+                  {doctor.doctor ? (
+                    <DoctorAvatar doctor={doctor.doctor} size="sm" />
+                  ) : (
+                    <div className="avatar h-10 w-10">
+                      <div className="rounded-2xl border border-base-300 bg-base-200 text-xs font-black text-base-content/70 flex items-center justify-center">
+                        {doctor.fullName
+                          .split(' ')
+                          .map((part) => part[0])
+                          .join('')
+                          .slice(0, 2)}
+                      </div>
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {doctor.doctorId ? (
+                        <Link
+                          href={`/doctors/${doctor.doctorId}`}
+                          className="font-bold text-base-content hover:text-secondary transition-colors"
+                        >
+                          {doctor.fullName}
+                        </Link>
+                      ) : (
+                        <div className="font-bold text-base-content">{doctor.fullName}</div>
+                      )}
+                      <span className="badge badge-ghost">{doctor.assignmentCount} intervale</span>
+                      <span className="badge badge-ghost">{doctor.cabinetCount} cabinete</span>
+                    </div>
+                    <div className="mt-1 text-sm text-base-content/65">
+                      {[doctor.professionalGrade, doctor.specialty].filter(Boolean).join(' · ') || 'Fără detalii suplimentare'}
+                    </div>
+                    {(doctor.email || doctor.phone) ? (
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-base-content/55">
+                        {doctor.email ? <span className="flex items-center gap-1.5"><Mail size={12} /> {doctor.email}</span> : null}
+                        {doctor.phone ? <span className="flex items-center gap-1.5"><Phone size={12} /> {doctor.phone}</span> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {doctor.assignments.slice(0, 3).map((assignment) => (
+                    <div key={assignment.$id} className="rounded-2xl border border-base-300 bg-base-100 px-3 py-2 text-sm text-base-content/70">
+                      <div className="flex flex-wrap items-center gap-2 font-semibold text-base-content">
+                        <CalendarDays size={13} className="text-base-content/45" />
+                        {formatAssignmentDate(assignment.assignmentDate)}
+                        <span className="text-base-content/35">·</span>
+                        <Clock size={13} className="text-base-content/45" />
+                        {assignment.startTime} - {assignment.endTime}
+                      </div>
+                      <div className="mt-1 text-xs text-base-content/60">
+                        {assignment.cabinetIdentifier} · {assignment.cabinetName}
+                        {assignment.cabinetSpecialty ? ` · ${assignment.cabinetSpecialty}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                  {doctor.assignments.length > 3 ? (
+                    <div className="text-xs font-semibold text-base-content/50">
+                      + încă {doctor.assignments.length - 3} intervale în program
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-[1.5rem] border border-dashed border-base-300 px-5 py-6 text-sm text-base-content/55 xl:col-span-2">
+              Nu există încă medici alocați în cabinetele acestui proiect.
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="bg-base-100 border border-base-200 rounded-3xl p-6 shadow-sm overflow-hidden">
         {/* Toolbar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
@@ -254,7 +432,7 @@ export default function VolunteersPage() {
                     </ul>
                 </div>
                 <button 
-                  onClick={fetchVolunteers}
+                  onClick={() => void handleRefresh()}
                   className="btn btn-ghost btn-sm btn-square rounded-xl hover:bg-base-200/50 transition-all"
                   disabled={isLoading}
                 >
@@ -433,4 +611,16 @@ export default function VolunteersPage() {
       />
     </div>
   );
+}
+
+function formatAssignmentDate(value?: string) {
+  if (!value) {
+    return '-';
+  }
+
+  try {
+    return format(parseISO(value), 'EEE, d MMM', { locale: ro });
+  } catch {
+    return value;
+  }
 }

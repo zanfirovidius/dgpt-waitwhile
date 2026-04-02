@@ -1,10 +1,26 @@
-export type CabinetAssigneeType = 'doctor' | 'responsible' | 'unassigned';
+export type CabinetAssigneeType =
+  | 'discipline'
+  | 'doctor'
+  | 'assistant'
+  | 'cabinet-chief'
+  | 'responsible'
+  | 'unassigned';
 export type CabinetPrintTemplateScope = 'project' | 'platform';
 
 export interface CabinetMaterialItem {
   id: string;
   label: string;
   checked: boolean;
+}
+
+export interface CabinetSpecialtyScheduleSlot {
+  assignmentId?: string;
+  assignmentDate: string;
+  startTime: string;
+  endTime: string;
+  specialty?: string;
+  materials?: CabinetMaterialItem[];
+  notes?: string;
 }
 
 export interface ProjectCabinet {
@@ -47,6 +63,9 @@ export interface ProjectCabinetAssignment {
   assigneeType: CabinetAssigneeType;
   doctorId?: string;
   doctorName?: string;
+  volunteerId?: string;
+  volunteerName?: string;
+  volunteerCategory?: string;
   responsibleName?: string;
   notes?: string;
   createdAt?: string;
@@ -64,6 +83,7 @@ export interface CabinetFormInput {
   specialty?: string;
   ultrasoundAvailable?: boolean;
   materials?: CabinetMaterialItem[];
+  specialtySchedule?: CabinetSpecialtyScheduleSlot[];
   defaultAssigneeType?: CabinetAssigneeType;
   defaultDoctorId?: string;
   defaultResponsibleName?: string;
@@ -80,8 +100,20 @@ export interface CabinetAssignmentFormInput {
   endTime: string;
   assigneeType?: CabinetAssigneeType;
   doctorId?: string;
+  volunteerId?: string;
   responsibleName?: string;
   notes?: string;
+}
+
+export interface CabinetPacketRoleAssignment {
+  assignmentId: string;
+  assigneeType: CabinetAssigneeType;
+  roleLabel: string;
+  assigneeName: string;
+  assigneeDisplayName: string;
+  doctorId?: string;
+  volunteerId?: string;
+  volunteerCategory?: string;
 }
 
 export interface CabinetPrintTemplateRecord {
@@ -103,6 +135,7 @@ export interface CabinetPrintTemplateRecord {
 
 export interface CabinetDailyPacket {
   assignmentId: string;
+  assignmentIds: string[];
   projectId: string;
   assignmentDate: string;
   startTime: string;
@@ -117,6 +150,7 @@ export interface CabinetDailyPacket {
   assigneeType: CabinetAssigneeType;
   assigneeName: string;
   assigneeDisplayName: string;
+  roleAssignments: CabinetPacketRoleAssignment[];
   notes?: string;
   materials: CabinetMaterialItem[];
   readyMaterialsCount: number;

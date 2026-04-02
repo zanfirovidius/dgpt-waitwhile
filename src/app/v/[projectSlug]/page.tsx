@@ -19,6 +19,7 @@ import {
   Clock3,
   FileText,
   LogOut,
+  Mail,
   MapPin,
   Save,
   ShieldCheck,
@@ -73,7 +74,8 @@ export default function VolunteerPortalPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [identifier, setIdentifier] = useState('');
-  const [maskedPhone, setMaskedPhone] = useState('');
+  const [deliveryChannel, setDeliveryChannel] = useState<'email' | 'sms' | null>(null);
+  const [maskedDestination, setMaskedDestination] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [step, setStep] = useState<'identify' | 'verify'>('identify');
   const [profileForm, setProfileForm] = useState<PortalProfileForm>(buildProfileForm());
@@ -119,11 +121,12 @@ export default function VolunteerPortalPage() {
         throw new Error(result.error || 'Nu am putut trimite codul de acces.');
       }
 
-      setMaskedPhone(result.data.maskedPhone);
+      setDeliveryChannel(result.data.channel);
+      setMaskedDestination(result.data.maskedDestination);
       setStep('verify');
       setMessage({
         type: 'success',
-        text: `Ți-am trimis un cod SMS pe ${result.data.maskedPhone}.`,
+        text: `Ți-am trimis un cod pe ${result.data.maskedDestination}.`,
       });
     } catch (requestError: unknown) {
       setError(requestError instanceof Error ? requestError.message : 'Nu am putut trimite codul.');
@@ -167,7 +170,8 @@ export default function VolunteerPortalPage() {
     await logoutVolunteerPortal();
     setIdentifier('');
     setOtpCode('');
-    setMaskedPhone('');
+    setMaskedDestination('');
+    setDeliveryChannel(null);
     setMessage(null);
     await loadPortalState();
   };
@@ -261,7 +265,7 @@ export default function VolunteerPortalPage() {
                   </div>
                   <h2 className="text-xl font-black tracking-tight">Primește codul de acces</h2>
                   <p className="text-sm text-base-content/60">
-                    Introdu emailul sau telefonul cu care ai fost înregistrat. Dacă există un număr de telefon în proiect, îți trimitem codul prin SMS.
+                    Introdu emailul sau telefonul cu care ai fost înregistrat. Codul se trimite pe același canal: email sau SMS.
                   </p>
                 </div>
 
@@ -278,7 +282,13 @@ export default function VolunteerPortalPage() {
                 </label>
 
                 <button className="btn btn-primary btn-lg w-full rounded-2xl gap-2" disabled={isSendingCode}>
-                  {isSendingCode ? <span className="loading loading-spinner loading-sm" /> : <Smartphone size={18} />}
+                  {isSendingCode ? (
+                    <span className="loading loading-spinner loading-sm" />
+                  ) : identifier.includes('@') ? (
+                    <Mail size={18} />
+                  ) : (
+                    <Smartphone size={18} />
+                  )}
                   Trimite codul
                 </button>
               </form>
@@ -288,9 +298,9 @@ export default function VolunteerPortalPage() {
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl bg-primary/10 text-primary">
                     <ShieldCheck size={26} />
                   </div>
-                  <h2 className="text-xl font-black tracking-tight">Confirmă codul SMS</h2>
+                  <h2 className="text-xl font-black tracking-tight">Confirmă codul de acces</h2>
                   <p className="text-sm text-base-content/60">
-                    Codul a fost trimis pe {maskedPhone || 'telefonul configurat'} și este valabil 3 minute.
+                    Codul a fost trimis pe {maskedDestination || 'contactul configurat'} prin {deliveryChannel === 'email' ? 'email' : 'SMS'} și este valabil 15 minute.
                   </p>
                 </div>
 

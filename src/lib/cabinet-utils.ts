@@ -3,6 +3,7 @@ import type {
   CabinetAssignmentFormInput,
   CabinetFormInput,
   CabinetMaterialItem,
+  CabinetSpecialtyScheduleSlot,
   CabinetAssigneeType,
   ProjectCabinet,
   ProjectCabinetAssignment,
@@ -44,11 +45,55 @@ export function normalizeResponsibleName(value?: string | null) {
 }
 
 export function normalizeCabinetAssigneeType(value?: string | null): CabinetAssigneeType {
-  if (value === 'doctor' || value === 'responsible') {
+  if (
+    value === 'discipline' ||
+    value === 'doctor' ||
+    value === 'assistant' ||
+    value === 'cabinet-chief' ||
+    value === 'responsible'
+  ) {
     return value;
   }
 
   return 'unassigned';
+}
+
+export function getCabinetAssigneeTypeLabel(value?: CabinetAssigneeType | null) {
+  switch (normalizeCabinetAssigneeType(value)) {
+    case 'discipline':
+      return 'Disciplina cabinetului';
+    case 'doctor':
+      return 'Medic';
+    case 'assistant':
+      return 'Asistent medical';
+    case 'cabinet-chief':
+      return 'Șef cabinet';
+    case 'responsible':
+      return 'Responsabil / tehnician';
+    default:
+      return 'Neasignat';
+  }
+}
+
+export function getCabinetAssignmentAssigneeName(
+  assignment: Pick<
+    ProjectCabinetAssignment,
+    'assigneeType' | 'cabinetSpecialty' | 'doctorName' | 'volunteerName' | 'responsibleName'
+  >,
+) {
+  switch (normalizeCabinetAssigneeType(assignment.assigneeType)) {
+    case 'discipline':
+      return sanitizeCabinetText(assignment.cabinetSpecialty, 255);
+    case 'doctor':
+      return sanitizeCabinetText(assignment.doctorName, 255);
+    case 'assistant':
+    case 'cabinet-chief':
+      return sanitizeCabinetText(assignment.volunteerName, 255);
+    case 'responsible':
+      return sanitizeResponsibleName(assignment.responsibleName);
+    default:
+      return '';
+  }
 }
 
 export function sanitizeMaterialItems(items?: CabinetMaterialItem[] | null) {
@@ -75,6 +120,26 @@ export function sanitizeMaterialItems(items?: CabinetMaterialItem[] | null) {
   }
 
   return sanitized;
+}
+
+export function sanitizeCabinetSpecialtyScheduleSlot(
+  slot?: CabinetSpecialtyScheduleSlot | null,
+): CabinetSpecialtyScheduleSlot {
+  return {
+    assignmentId: sanitizeCabinetText(slot?.assignmentId, 128),
+    assignmentDate: sanitizeCabinetDate(slot?.assignmentDate),
+    startTime: sanitizeCabinetTime(slot?.startTime),
+    endTime: sanitizeCabinetTime(slot?.endTime),
+    specialty: sanitizeCabinetText(slot?.specialty, 160),
+    materials: sanitizeMaterialItems(slot?.materials),
+    notes: sanitizeCabinetLongText(slot?.notes, 1500),
+  };
+}
+
+export function sanitizeCabinetSpecialtyScheduleSlots(
+  slots?: CabinetSpecialtyScheduleSlot[] | null,
+) {
+  return (slots || []).map((slot) => sanitizeCabinetSpecialtyScheduleSlot(slot));
 }
 
 export function serializeCabinetMaterials(items?: CabinetMaterialItem[] | null) {
@@ -113,6 +178,7 @@ export function sanitizeCabinetFormInput(input: CabinetFormInput): CabinetFormIn
     specialty: sanitizeCabinetText(input.specialty, 160),
     ultrasoundAvailable: Boolean(input.ultrasoundAvailable),
     materials: sanitizeMaterialItems(input.materials),
+    specialtySchedule: sanitizeCabinetSpecialtyScheduleSlots(input.specialtySchedule),
     defaultAssigneeType: 'unassigned',
     defaultDoctorId: '',
     defaultResponsibleName: '',
@@ -131,6 +197,7 @@ export function sanitizeCabinetAssignmentInput(input: CabinetAssignmentFormInput
     endTime: sanitizeCabinetTime(input.endTime),
     assigneeType: normalizeCabinetAssigneeType(input.assigneeType),
     doctorId: sanitizeCabinetText(input.doctorId, 128),
+    volunteerId: sanitizeCabinetText(input.volunteerId, 128),
     responsibleName: sanitizeResponsibleName(input.responsibleName),
     notes: sanitizeCabinetLongText(input.notes, 1500),
   };
@@ -155,6 +222,55 @@ export function validateCabinetFormInput(input: CabinetFormInput) {
 
   if ((sanitized.materials || []).length === 0) {
     warnings.push('Checklist-ul de bază al cabinetului este gol.');
+  }
+
+  const specialtySchedule = sanitized.specialtySchedule || [];
+  if (specialtySchedule.length === 0) {
+    warnings.push('Cabinetul nu are încă specialități definite pe zile și intervale.');
+  }
+
+  for (const [index, slot] of specialtySchedule.entries()) {
+    if (!slot.assignmentDate) {
+      errors.push(`Intervalul ${index + 1}: ziua este obligatorie.`);
+    }
+
+    if (!slot.startTime || !slot.endTime) {
+      errors.push(`Intervalul ${index + 1}: ora de început și ora de final sunt obligatorii.`);
+    }
+
+    if (slot.startTime && slot.endTime && slot.startTime >= slot.endTime) {
+      errors.push(`Intervalul ${index + 1}: ora de început trebuie să fie înaintea orei de final.`);
+    }
+  }
+
+  const slotsByDay = new Map<string, CabinetSpecialtyScheduleSlot[]>();
+  for (const slot of specialtySchedule) {
+    if (!slot.assignmentDate || !slot.startTime || !slot.endTime) {
+      continue;
+    }
+
+    const current = slotsByDay.get(slot.assignmentDate) || [];
+    current.push(slot);
+    slotsByDay.set(slot.assignmentDate, current);
+  }
+
+  for (const [day, slots] of slotsByDay.entries()) {
+    const sortedSlots = [...slots].sort((left, right) =>
+      left.startTime === right.startTime
+        ? left.endTime.localeCompare(right.endTime, 'ro')
+        : left.startTime.localeCompare(right.startTime, 'ro'),
+    );
+
+    for (let index = 1; index < sortedSlots.length; index += 1) {
+      const previous = sortedSlots[index - 1];
+      const current = sortedSlots[index];
+
+      if (doTimeRangesOverlap(previous.startTime, previous.endTime, current.startTime, current.endTime)) {
+        errors.push(
+          `Cabinetul are intervale de disciplină suprapuse pe ${day}: ${previous.startTime}-${previous.endTime} și ${current.startTime}-${current.endTime}.`,
+        );
+      }
+    }
   }
 
   return { errors, warnings };
@@ -185,8 +301,19 @@ export function validateCabinetAssignmentInput(input: CabinetAssignmentFormInput
     errors.push('Ora de început trebuie să fie înaintea orei de final.');
   }
 
+  if (sanitized.assigneeType === 'discipline' && !sanitized.cabinetSpecialty) {
+    errors.push('Selectează disciplina cabinetului pentru acest interval.');
+  }
+
   if (sanitized.assigneeType === 'doctor' && !sanitized.doctorId) {
     errors.push('Selectează medicul pentru acest interval.');
+  }
+
+  if (
+    (sanitized.assigneeType === 'assistant' || sanitized.assigneeType === 'cabinet-chief') &&
+    !sanitized.volunteerId
+  ) {
+    errors.push(`Selectează ${sanitized.assigneeType === 'assistant' ? 'asistentul medical' : 'șeful de cabinet'} pentru acest interval.`);
   }
 
   if (sanitized.assigneeType === 'responsible' && !sanitized.responsibleName) {
@@ -195,10 +322,6 @@ export function validateCabinetAssignmentInput(input: CabinetAssignmentFormInput
 
   if (sanitized.assigneeType === 'unassigned') {
     warnings.push('Intervalul rămâne neasignat momentan.');
-  }
-
-  if (!sanitized.cabinetSpecialty) {
-    warnings.push('Disciplina intervalului este necompletată. Pentru cabinetele non-clinice acest lucru este acceptat.');
   }
 
   return { errors, warnings };

@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
 import { jsPDF } from 'jspdf';
 import type { CabinetDailyPacket } from '@/lib/cabinet-types';
+import { buildCabinetRoleSummaryLines } from '@/lib/cabinet-print-utils';
 
 type CabinetChecklistProjectContext = {
   name: string;
@@ -58,7 +59,7 @@ export function generateCabinetChecklistPdf(args: {
     doc.setFontSize(9.5);
     const metaLines = [
       `Interval: ${packet.intervalLabel}`,
-      `Alocat: ${packet.assigneeDisplayName}`,
+      ...buildCabinetRoleSummaryLines(packet.roleAssignments),
       `Disciplina: ${packet.specialty || 'Non-clinic'}`,
       `Ecograf: ${packet.ultrasoundAvailable ? 'Da' : 'Nu'}`,
     ];
@@ -99,7 +100,7 @@ function estimatePacketHeight(doc: jsPDF, packet: CabinetDailyPacket, usableWidt
   let height = 22;
   const metaLines = [
     `Interval: ${packet.intervalLabel}`,
-    `Alocat: ${packet.assigneeDisplayName}`,
+    ...buildCabinetRoleSummaryLines(packet.roleAssignments),
     `Disciplina: ${packet.specialty || 'Non-clinic'}`,
     `Ecograf: ${packet.ultrasoundAvailable ? 'Da' : 'Nu'}`,
     ...(packet.notes ? [`Observatii: ${packet.notes}`] : []),
