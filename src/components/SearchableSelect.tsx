@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, ChevronDown, Search } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { normalizeName } from '@/lib/name-utils';
 
 type SearchableSelectProps = {
@@ -27,8 +27,10 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const listboxId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
     if (!isOpen) {
@@ -75,23 +77,139 @@ export function SearchableSelect({
     return options.filter((option) => normalizeName(option).includes(normalizedQuery));
   }, [options, query]);
 
+  const visibleOptions = useMemo(
+    () => [{ value: '', label: emptyOptionLabel }, ...filteredOptions.map((option) => ({ value: option, label: option }))],
+    [emptyOptionLabel, filteredOptions],
+  );
+
+  const safeActiveIndex = Math.min(activeIndex, Math.max(visibleOptions.length - 1, 0));
+  const activeOptionId = `${listboxId}-option-${safeActiveIndex}`;
+
+  const closeMenu = () => {
+    setIsOpen(false);
+    setQuery('');
+  };
+
+  const openMenu = (focusTarget: 'selected' | 'first' | 'last' = 'selected') => {
+    if (disabled) {
+      return;
+    }
+
+    const selectedIndex = visibleOptions.findIndex((option) => option.value === value);
+    const lastIndex = Math.max(visibleOptions.length - 1, 0);
+
+    setQuery('');
+    setActiveIndex(
+      focusTarget === 'first' ? 0 : focusTarget === 'last' ? lastIndex : selectedIndex >= 0 ? selectedIndex : 0,
+    );
+    setIsOpen(true);
+  };
+
+  const handleSelect = (nextValue: string) => {
+    onChange(nextValue);
+    closeMenu();
+  };
+
+  const moveActiveIndex = (direction: 1 | -1) => {
+    if (!isOpen) {
+      openMenu(direction === 1 ? 'first' : 'last');
+      return;
+    }
+
+    const lastIndex = visibleOptions.length - 1;
+    if (lastIndex < 0) {
+      return;
+    }
+
+    setActiveIndex((current) => {
+      const start = Math.min(current, lastIndex);
+
+      if (direction === 1) {
+        return start >= lastIndex ? 0 : start + 1;
+      }
+
+      return start <= 0 ? lastIndex : start - 1;
+    });
+  };
+
+  const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) {
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        moveActiveIndex(1);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        moveActiveIndex(-1);
+        break;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        if (isOpen) {
+          handleSelect(visibleOptions[safeActiveIndex]?.value ?? '');
+        } else {
+          openMenu();
+        }
+        break;
+      case 'Escape':
+        if (isOpen) {
+          event.preventDefault();
+          closeMenu();
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        moveActiveIndex(1);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        moveActiveIndex(-1);
+        break;
+      case 'Enter':
+        event.preventDefault();
+        handleSelect(visibleOptions[safeActiveIndex]?.value ?? '');
+        break;
+      case 'Escape':
+        event.preventDefault();
+        closeMenu();
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
         className="input input-bordered flex w-full items-center justify-between gap-2 text-left"
         disabled={disabled}
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-controls={listboxId}
+        aria-activedescendant={isOpen ? activeOptionId : undefined}
+        aria-disabled={disabled}
         onClick={() => {
-          if (!disabled) {
-            setIsOpen((current) => {
-              if (!current) {
-                setQuery('');
-              }
-
-              return !current;
-            });
+          if (isOpen) {
+            closeMenu();
+            return;
           }
+
+          openMenu();
         }}
+        onKeyDown={handleTriggerKeyDown}
       >
         <span className={`truncate ${value ? 'text-base-content' : 'text-base-content/45'}`}>
           {value || placeholder}
@@ -110,36 +228,32 @@ export function SearchableSelect({
                 className="grow"
                 value={query}
                 placeholder={searchPlaceholder}
-                onChange={(event) => setQuery(event.target.value)}
+                aria-label={searchPlaceholder}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setActiveIndex(0);
+                }}
+                onKeyDown={handleSearchKeyDown}
               />
             </label>
           </div>
 
-          <div className="max-h-64 overflow-y-auto p-2">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-base-200"
-              onClick={() => {
-                onChange('');
-                setIsOpen(false);
-              }}
-            >
-              <span>{emptyOptionLabel}</span>
-              {!value ? <Check size={14} className="text-primary" /> : null}
-            </button>
-
-            {filteredOptions.map((option) => (
+          <div id={listboxId} role="listbox" aria-label={placeholder} className="max-h-64 overflow-y-auto p-2">
+            {visibleOptions.map((option, index) => (
               <button
-                key={option}
+                key={option.value || '__empty__'}
                 type="button"
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-base-200"
-                onClick={() => {
-                  onChange(option);
-                  setIsOpen(false);
-                }}
+                id={`${listboxId}-option-${index}`}
+                role="option"
+                aria-selected={value === option.value}
+                className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${
+                  safeActiveIndex === index ? 'bg-base-200' : 'hover:bg-base-200'
+                }`}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => handleSelect(option.value)}
               >
-                <span className="pr-3">{option}</span>
-                {value === option ? <Check size={14} className="shrink-0 text-primary" /> : null}
+                <span className="pr-3">{option.label}</span>
+                {value === option.value ? <Check size={14} className="shrink-0 text-primary" /> : null}
               </button>
             ))}
 

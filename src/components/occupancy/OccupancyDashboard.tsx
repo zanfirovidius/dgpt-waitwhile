@@ -10,12 +10,11 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
-  Hash,
   Layers,
   MapPin,
   Stethoscope,
 } from 'lucide-react';
-import { type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type SortConfig = {
   key: 'name' | 'occupancyPercent';
@@ -70,10 +69,19 @@ function AnimatedNumber({ value, isPercent = false }: { value: number; isPercent
   return <>{isPercent ? displayValue.toFixed(1) : Math.round(displayValue)}</>;
 }
 
+function formatOccupancyDay(day: string) {
+  const parsedDate = new Date(day);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return day;
+  }
+
+  return parsedDate.toLocaleDateString('ro-RO', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 export function OccupancyDashboard({
   autoDateFromLocation = true,
   headerDescription = 'Selectează locația și intervalul pentru a calcula gradul de ocupare al cabinetelor.',
-  headerTitle = 'Occupancy Dashboard',
+  headerTitle = 'Grad de ocupare',
   hideLocationSelector = false,
   initialFromDate,
   initialLocationId = '',
@@ -138,9 +146,7 @@ export function OccupancyDashboard({
           setFromDate(earliest);
           setToDate(latest);
         }
-      } catch (error) {
-        console.error('[Occupancy] auto-dating error', error);
-      }
+      } catch {}
     })();
 
     return () => {
@@ -203,12 +209,12 @@ export function OccupancyDashboard({
 
   const getOccupancyBadge = (percent: number) => {
     if (percent > 80) {
-      return 'badge-success text-white shadow-success/20 shadow-md';
+      return 'border-success/20 bg-success/10 text-success';
     }
     if (percent >= 30) {
-      return 'badge-warning text-warning-content shadow-warning/20 shadow-md';
+      return 'border-warning/20 bg-warning/10 text-warning';
     }
-    return 'badge-error text-white shadow-error/20 shadow-md';
+    return 'border-error/20 bg-error/10 text-error';
   };
 
   const global = occupancy?.global;
@@ -252,8 +258,8 @@ export function OccupancyDashboard({
 
   return (
     <div className="space-y-6">
-      <div className="card border border-base-200 bg-base-100 shadow-xl">
-        <div className="card-body gap-6 sm:flex-row sm:items-end">
+      <div className="card border border-base-200 bg-base-100 shadow-sm">
+        <div className="card-body gap-6 p-4 sm:p-6 lg:flex-row lg:items-end">
           <div className="flex-1">
             <h2 className="card-title mb-2 flex items-center gap-2 text-base text-base-content/70">
               <CalendarRange size={18} /> {headerTitle}
@@ -261,9 +267,9 @@ export function OccupancyDashboard({
             <p className="text-sm text-base-content/55">{headerDescription}</p>
           </div>
 
-          <div className="flex w-full flex-col gap-4 sm:w-auto sm:flex-row sm:items-end">
+          <div className="flex w-full flex-col gap-4 lg:w-auto lg:flex-row lg:items-end">
             {hideLocationSelector ? (
-              <div className="form-control min-w-56">
+              <div className="form-control min-w-0 lg:min-w-56">
                 <label className="label">
                   <span className="label-text font-semibold">Locație proiect</span>
                 </label>
@@ -273,15 +279,15 @@ export function OccupancyDashboard({
                 </div>
               </div>
             ) : (
-              <div className="w-full sm:w-72">
+              <div className="w-full lg:w-72">
                 <h2 className="mb-2 flex items-center gap-2 text-base text-base-content/70">
-                  <CalendarRange size={18} /> Parametri occupancy
+                  <CalendarRange size={18} /> Parametri ocupare
                 </h2>
                 <LocationSelector selectedLocation={selectedLocation} onChange={setSelectedLocation} />
               </div>
             )}
 
-            <label className="form-control w-full sm:w-auto">
+            <label className="form-control w-full lg:w-auto">
               <span className="label">
                 <span className="label-text font-semibold">Data început</span>
               </span>
@@ -293,7 +299,7 @@ export function OccupancyDashboard({
               />
             </label>
 
-            <label className="form-control w-full sm:w-auto">
+            <label className="form-control w-full lg:w-auto">
               <span className="label">
                 <span className="label-text font-semibold">Data final</span>
               </span>
@@ -305,9 +311,9 @@ export function OccupancyDashboard({
               />
             </label>
 
-            <div className="ml-auto flex items-center gap-2">
-              <label className="mr-2 flex cursor-pointer items-center gap-2 rounded-lg border border-base-300 bg-base-200 px-3 py-2">
-                <span className="label-text whitespace-nowrap text-sm font-semibold">Ascunde full</span>
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap lg:ml-auto lg:w-auto lg:flex-nowrap lg:items-center">
+              <label className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-200 px-3 py-2 sm:w-auto">
+                <span className="label-text whitespace-nowrap text-sm font-semibold">Ascunde complet ocupate</span>
                 <input
                   type="checkbox"
                   className="toggle toggle-primary toggle-sm"
@@ -320,10 +326,10 @@ export function OccupancyDashboard({
                 <button
                   type="button"
                   onClick={handleSharePublic}
-                  className="btn btn-secondary shadow-lg shadow-secondary/20"
-                  title="Copy sharable public link"
+                  className="btn btn-outline w-full shadow-sm sm:w-auto"
+                  title="Copiază linkul public"
                 >
-                  <ExternalLink size={18} /> {copiedLink ? 'Copied!' : 'Share Board'}
+                  <ExternalLink size={18} /> {copiedLink ? 'Link copiat' : 'Copiază link public'}
                 </button>
               ) : null}
 
@@ -331,7 +337,7 @@ export function OccupancyDashboard({
                 type="button"
                 onClick={() => void refetch()}
                 disabled={!selectedLocation || isFetching}
-                className="btn btn-primary shadow-lg shadow-primary/20"
+                className="btn btn-primary w-full shadow-sm sm:w-auto"
               >
                 {isFetching || isLoading ? <span className="loading loading-spinner" /> : <Activity size={18} />}
                 Recalculează
@@ -342,82 +348,148 @@ export function OccupancyDashboard({
       </div>
 
       {isError ? (
-        <div className="alert alert-error shadow-lg">
-          <span>Eroare la încărcare: {(error as Error)?.message || 'Nu am putut calcula ocuparea.'}</span>
+        <div className="rounded-2xl border border-error/20 bg-error/5 px-4 py-3 text-sm text-base-content shadow-sm">
+          Eroare la încărcare: {(error as Error)?.message || 'Nu am putut calcula ocuparea.'}
         </div>
       ) : null}
 
       {global && !isFetching ? (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-          <div className="stats border border-base-200 bg-base-100 shadow">
-            <div className="stat px-4 py-3">
-              <div className="stat-figure text-base-content/50"><Layers size={24} /></div>
-              <div className="stat-title text-xs font-semibold lg:text-sm">Resources</div>
-              <div className="stat-value text-xl lg:text-2xl"><AnimatedNumber value={totalResourceCount} /></div>
-              <div className="stat-desc text-[10px] lg:text-xs">Total showing</div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-base-content/45">
+              <Layers size={16} />
+              Cabinete afișate
+            </div>
+            <div className="text-3xl font-semibold text-base-content">
+              <AnimatedNumber value={totalResourceCount} />
+            </div>
+            <div className="mt-3 flex items-center gap-2 text-sm text-base-content/60">
+              <Stethoscope size={14} className="text-base-content/45" />
+              <span>
+                <span className="font-semibold text-base-content">
+                  <AnimatedNumber value={ecoResourceCount} />
+                </span>{' '}
+                cabinete eco, doppler sau mamografie
+              </span>
             </div>
           </div>
-          <div className="stats border border-base-200 bg-base-100 shadow">
-            <div className="stat px-4 py-3">
-              <div className="stat-figure text-secondary"><Stethoscope size={24} /></div>
-              <div className="stat-title text-xs font-semibold lg:text-sm">Eco/Doppler/Mamo</div>
-              <div className="stat-value text-xl text-secondary lg:text-2xl"><AnimatedNumber value={ecoResourceCount} /></div>
-              <div className="stat-desc text-[10px] text-secondary lg:text-xs">Matching</div>
+
+          <div className="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-base-content/45">
+              <CalendarDays size={16} />
+              Capacitate
             </div>
-          </div>
-          <div className="stats border border-base-200 bg-base-100 shadow">
-            <div className="stat px-4 py-3">
-              <div className="stat-figure text-base-content/50"><Hash size={24} /></div>
-              <div className="stat-title text-xs font-semibold lg:text-sm">Total Slots</div>
-              <div className="stat-value text-xl lg:text-2xl"><AnimatedNumber value={global.total} /></div>
-              <div className="stat-desc select-none text-[10px] text-transparent lg:text-xs">-</div>
+            <div className="text-3xl font-semibold text-base-content">
+              <AnimatedNumber value={global.total} />
             </div>
+            <p className="mt-1 text-sm text-base-content/55">locuri totale în intervalul selectat</p>
+            <p className="mt-3 text-sm text-base-content/60">
+              <span className="font-semibold text-base-content">
+                <AnimatedNumber value={global.available} />
+              </span>{' '}
+              încă disponibile
+            </p>
           </div>
-          <div className="stats border border-base-200 bg-base-100 shadow">
-            <div className="stat px-4 py-3">
-              <div className="stat-figure text-success"><Activity size={24} /></div>
-              <div className="stat-title text-xs font-semibold lg:text-sm">Bookings</div>
-              <div className="stat-value text-xl lg:text-2xl"><AnimatedNumber value={global.booked} /></div>
-              <div className="stat-desc text-[10px] text-success lg:text-xs">Scheduled</div>
+
+          <div className="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-base-content/45">
+              <Activity size={16} />
+              Grad de ocupare
             </div>
-          </div>
-          <div className="stats border border-base-200 bg-base-100 shadow">
-            <div className="stat px-4 py-3">
-              <div className="stat-figure text-info"><CalendarDays size={24} /></div>
-              <div className="stat-title text-xs font-semibold lg:text-sm">Available</div>
-              <div className="stat-value text-xl lg:text-2xl"><AnimatedNumber value={global.available} /></div>
-              <div className="stat-desc text-[10px] text-info lg:text-xs">Free slots</div>
+            <div className={`text-3xl font-semibold ${getOccupancyColor(global.occupancyPercent)}`}>
+              <AnimatedNumber value={global.occupancyPercent} isPercent />%
             </div>
-          </div>
-          <div className="stats border border-base-200 bg-base-100 shadow">
-            <div className="stat px-4 py-3">
-              <div className="stat-figure">
-                <div
-                  className={`radial-progress transition-all duration-1000 ease-out ${getOccupancyColor(global.occupancyPercent)}`}
-                  style={{ '--value': global.occupancyPercent, '--size': '2.5rem', '--thickness': '3px' } as CSSProperties}
-                />
-              </div>
-              <div className="stat-title text-xs font-semibold lg:text-sm">Occupancy</div>
-              <div className={`stat-value text-xl lg:text-2xl ${getOccupancyColor(global.occupancyPercent)}`}>
-                <AnimatedNumber value={global.occupancyPercent} isPercent />%
-              </div>
+            <p className="mt-1 text-sm text-base-content/55">
+              <span className="font-semibold text-base-content">
+                <AnimatedNumber value={global.booked} />
+              </span>{' '}
+              programări din{' '}
+              <span className="font-semibold text-base-content">
+                <AnimatedNumber value={global.total} />
+              </span>
+            </p>
+            <div className="mt-4 h-2 rounded-full bg-base-200">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  global.occupancyPercent > 80
+                    ? 'bg-success/70'
+                    : global.occupancyPercent >= 30
+                      ? 'bg-warning/70'
+                      : 'bg-error/70'
+                }`}
+                style={{ width: `${Math.min(global.occupancyPercent, 100)}%` }}
+              />
             </div>
           </div>
         </div>
       ) : null}
 
       {resources.length > 0 && !isFetching ? (
-        <div className="card mt-6 border border-base-200 bg-base-100 shadow-xl">
-          <div className="card-body overflow-x-auto p-0">
+        <div className="card mt-6 border border-base-200 bg-base-100 shadow-sm">
+          <div className="space-y-3 p-4 md:hidden">
+            {sortedResources.map((resource) => {
+              const activeDays = sortedDays.filter((day) => {
+                const dayData = resource.daily[day];
+                return Boolean(dayData && dayData.total > 0);
+              });
+
+              return (
+                <article key={resource.resourceId} className="rounded-2xl border border-base-200 bg-base-100 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold text-base-content">{resource.name}</h3>
+                      <p className="mt-1 text-xs text-base-content/55">
+                        {resource.booked} ocupate din {resource.total} locuri
+                      </p>
+                    </div>
+                    <span className={`badge badge-sm font-semibold ${getOccupancyBadge(resource.occupancyPercent)}`}>
+                      {resource.occupancyPercent.toFixed(0)}%
+                    </span>
+                  </div>
+
+                  {activeDays.length > 0 ? (
+                    <div className="mt-4 space-y-2">
+                      {activeDays.map((day) => {
+                        const dayData = resource.daily[day];
+                        if (!dayData || dayData.total === 0) {
+                          return null;
+                        }
+
+                        return (
+                          <div key={day} className="flex items-center justify-between gap-3 rounded-xl bg-base-200/40 px-3 py-2">
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-base-content">{formatOccupancyDay(day)}</div>
+                              <div className="text-[11px] text-base-content/55">
+                                {dayData.booked} / {dayData.total}
+                              </div>
+                            </div>
+                            <span className={`text-sm font-semibold ${getOccupancyColor(dayData.occupancyPercent)}`}>
+                              {dayData.occupancyPercent.toFixed(0)}%
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-xl bg-base-200/30 px-3 py-2 text-xs text-base-content/55">
+                      Fără sloturi în intervalul selectat.
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="table table-md">
               <thead className="bg-base-200/50">
                 <tr>
                   <th
                     className="min-w-[200px] cursor-pointer select-none font-bold transition-colors hover:bg-base-300"
-                    onClick={() => handleSort('name')}
-                  >
+                      onClick={() => handleSort('name')}
+                    >
                     <div className="flex items-center gap-2">
-                      Cabinet Resource
+                      Cabinet
                       {sortConfig?.key === 'name'
                         ? sortConfig.direction === 'asc'
                           ? <ChevronUp size={14} />
@@ -430,7 +502,7 @@ export function OccupancyDashboard({
                     onClick={() => handleSort('occupancyPercent')}
                   >
                     <div className="flex items-center justify-center gap-2">
-                      TOTAL OCCUPANCY
+                      Ocupare totală
                       {sortConfig?.key === 'occupancyPercent'
                         ? sortConfig.direction === 'asc'
                           ? <ChevronUp size={14} />
@@ -440,7 +512,7 @@ export function OccupancyDashboard({
                   </th>
                   {sortedDays.map((day) => (
                     <th key={day} className="border-l border-base-300 text-center text-xs opacity-70">
-                      {new Date(day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                      {formatOccupancyDay(day)}
                     </th>
                   ))}
                 </tr>
@@ -451,7 +523,7 @@ export function OccupancyDashboard({
                     <td className="font-semibold">{resource.name}</td>
                     <td className="border-l border-base-300 bg-base-200/30 text-center">
                       <div className="flex flex-col items-center gap-1">
-                        <span className={`badge badge-sm font-bold ${getOccupancyBadge(resource.occupancyPercent)}`}>
+                        <span className={`badge badge-sm font-semibold ${getOccupancyBadge(resource.occupancyPercent)}`}>
                           {resource.occupancyPercent.toFixed(0)}%
                         </span>
                         <div className="font-mono text-[10px] opacity-60">
@@ -469,7 +541,7 @@ export function OccupancyDashboard({
                       return (
                         <td key={day} className="border-l border-base-200 text-center">
                           <div className="flex flex-col items-center gap-1">
-                            <span className={`text-xs font-bold ${getOccupancyColor(dayData.occupancyPercent)}`}>
+                            <span className={`text-xs font-semibold ${getOccupancyColor(dayData.occupancyPercent)}`}>
                               {dayData.occupancyPercent.toFixed(0)}%
                             </span>
                             <div className="whitespace-nowrap text-[10px] opacity-60">

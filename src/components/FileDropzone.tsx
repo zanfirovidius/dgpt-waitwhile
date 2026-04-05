@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertCircle, UploadCloud } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useRef, useState } from 'react';
 
 type FileDropzoneProps = {
   accept: string;
@@ -22,8 +22,14 @@ export function FileDropzone({
   disabled = false,
   onFileSelected,
 }: FileDropzoneProps) {
-  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
+
+  const openFilePicker = () => {
+    if (!disabled) {
+      inputRef.current?.click();
+    }
+  };
 
   const handleFileUpload = async (file?: File | null) => {
     if (!file || disabled) {
@@ -62,19 +68,26 @@ export function FileDropzone({
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`border-2 border-dashed rounded-2xl p-8 text-center transition-colors group ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-primary hover:bg-base-200/50'} ${isDragActive ? 'border-primary bg-primary/10' : 'border-base-300'}`}
-        onClick={() => {
-          if (!disabled) {
-            document.getElementById(inputId)?.click();
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        className={`ui-dropzone group rounded-2xl border-2 border-dashed p-8 text-center transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-base-100 ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer active:scale-[0.995]'
+        } ${isDragActive ? 'ui-dropzone-active shadow-sm' : ''}`}
+        onClick={openFilePicker}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openFilePicker();
           }
         }}
-      >
-        <UploadCloud className={`mx-auto mb-4 transition-colors ${isDragActive ? 'text-primary' : 'text-base-content/40 group-hover:text-primary'}`} size={48} />
-        <h3 className="mb-1 font-bold text-lg">{title}</h3>
-        <p className="text-sm text-base-content/60">{subtitle}</p>
-        {hint ? <p className="mt-2 text-xs text-base-content/40">{hint}</p> : null}
-        <input
-          id={inputId}
+	      >
+		        <UploadCloud className="ui-dropzone-icon mx-auto mb-4 transition-colors" size={48} />
+	        <h3 className="ui-section-title mb-1 text-base-content">{title}</h3>
+	        <p className="ui-body mx-auto text-base-content/60">{subtitle}</p>
+	        {hint ? <p className="mt-3 text-[0.8rem] leading-5 text-base-content/45">{hint}</p> : null}
+	        <input
+          ref={inputRef}
           type="file"
           accept={accept}
           className="hidden"
@@ -88,11 +101,11 @@ export function FileDropzone({
         />
       </div>
 
-      {error ? (
-        <div className="alert alert-error rounded-xl py-2 text-sm">
-          <AlertCircle size={16} />
-          <span>{error}</span>
-        </div>
+	      {error ? (
+	        <div className="flex items-start gap-2 rounded-xl border border-error/20 bg-error/5 px-3 py-2 text-[0.94rem] leading-6 text-base-content">
+	          <AlertCircle size={16} />
+	          <span>{error}</span>
+	        </div>
       ) : null}
     </div>
   );

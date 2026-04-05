@@ -1,6 +1,7 @@
 'use client';
 
 import { ExtendedUser } from '@/app/page';
+import { getWaitwhileRoleLabel } from '@/lib/waitwhile-user-roles';
 import { Trash2 } from 'lucide-react';
 
 interface UserGridProps {
@@ -18,51 +19,52 @@ export default function UserGrid({ users, setUsers }: UserGridProps) {
     setUsers(users.map(u => u.id === id ? { ...u, password: newPassword } : u));
   };
 
-  if (users.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 py-24 border-2 border-dashed border-base-300 rounded-2xl bg-base-200/50">
-        <p className="text-base-content/50 font-medium">No users added yet</p>
-        <p className="text-sm text-base-content/40 mt-1 text-center">Use the panel on the left to add users from an Excel file or manually.</p>
-      </div>
-    );
-  }
+	  if (users.length === 0) {
+	    return (
+		      <div className="ui-panel-sky flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-12 py-24 text-center">
+	        <p className="ui-section-title text-base-content/70">Nu ai adăugat încă niciun utilizator</p>
+	        <p className="ui-body mt-2 text-base-content/45">Folosește una dintre metodele din stânga pentru a pregăti lista de sincronizare.</p>
+	      </div>
+	    );
+	  }
 
-  return (
-    <div className="overflow-x-auto rounded-xl border border-base-200 bg-base-100 max-h-[500px]">
-      <table className="table table-pin-rows table-zebra">
-        <thead>
-          <tr className="bg-base-200 text-base-content/80">
-            <th>Name</th>
-            <th>Email / Phone</th>
-            <th>Role</th>
-            <th>Password (Optional)</th>
-            <th className="w-12 text-center">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => (
-            <tr key={user.id} className="hover">
-              <td className="font-medium whitespace-nowrap">{user.name}</td>
-              <td className="whitespace-nowrap text-sm text-base-content/70">{user.email}</td>
-              <td>
-                <span className={`badge badge-sm font-semibold ${user.roles[0] === 'SECRETARIAT' ? 'badge-primary' : 'badge-secondary'}`}>
-                  {user.roles[0]}
-                </span>
-              </td>
-              <td>
-                <input 
-                  type="text" 
-                  placeholder="Will auto-generate if empty" 
-                  className="input input-sm input-bordered w-full max-w-xs focus:bg-base-100 bg-base-200/50"
-                  value={user.password || ''}
-                  onChange={(e) => handlePasswordChange(user.id, e.target.value)}
-                />
+	  return (
+	    <div className="max-h-[500px] overflow-x-auto rounded-xl border border-base-200 bg-base-100">
+	      <table className="table table-pin-rows table-zebra">
+	        <thead>
+	          <tr className="bg-base-200 text-base-content/80">
+	            <th className="ui-label">Nume</th>
+	            <th className="ui-label">Email generat</th>
+	            <th className="ui-label">Rol</th>
+	            <th className="ui-label">Parolă (opțional)</th>
+	            <th className="ui-label w-12 text-center">Acțiune</th>
+	          </tr>
+	        </thead>
+	        <tbody>
+	          {users.map((user) => (
+	            <tr key={user.id} className="hover">
+	              <td className="whitespace-nowrap text-[0.96rem] font-semibold text-base-content">{user.name}</td>
+	              <td className="ui-tabular whitespace-nowrap text-[0.88rem] text-base-content/68">{user.email}</td>
+	              <td>
+		                <span className={`badge badge-sm ui-tabular font-semibold ${user.roles[0] === 'SECRETARIAT' ? 'ui-badge-sky' : 'ui-badge-teal'}`}>
+	                  {getWaitwhileRoleLabel(user.roles[0])}
+	                </span>
+	              </td>
+	              <td>
+	                <input 
+	                  type="text" 
+	                  placeholder="Se generează automat dacă rămâne gol" 
+	                  className="input input-sm input-bordered ui-tabular w-full max-w-xs bg-base-200/50 text-[0.88rem] focus:bg-base-100"
+	                  value={user.password || ''}
+	                  onChange={(e) => handlePasswordChange(user.id, e.target.value)}
+	                />
               </td>
               <td className="text-center">
                 <button 
                   onClick={() => handleRemove(user.id)}
                   className="btn btn-ghost btn-sm btn-square text-error hover:bg-error/20"
-                  title="Remove User"
+                  title="Elimină utilizatorul"
+                  aria-label={`Elimină utilizatorul ${user.name}`}
                 >
                   <Trash2 size={16} />
                 </button>

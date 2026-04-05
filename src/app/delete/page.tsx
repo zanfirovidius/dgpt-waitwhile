@@ -3,7 +3,7 @@
 import { deleteUser, getAllUsers } from '@/app/actions/waitwhile';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Search, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 export default function DeleteUsersPage() {
   const queryClient = useQueryClient();
@@ -24,21 +24,16 @@ export default function DeleteUsersPage() {
     },
   });
 
-  const users = usersData || [];
-
   // Filter users by domain
   const filteredUsers = useMemo(() => {
+    const users = usersData ?? [];
     if (!filterDomain) return users;
-    return users.filter(u => u.email.toLowerCase().includes(filterDomain.toLowerCase()));
-  }, [users, filterDomain]);
+    return users.filter((user) => user.email.toLowerCase().includes(filterDomain.toLowerCase()));
+  }, [usersData, filterDomain]);
 
-  // Reset to first page when filter changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterDomain]);
-
-  const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / ITEMS_PER_PAGE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
   const paginatedUsers = filteredUsers.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
   // Handle Selection
@@ -80,9 +75,10 @@ export default function DeleteUsersPage() {
       queryClient.invalidateQueries({ queryKey: ['waitwhile-users'] });
       refetch();
     },
-    onError: (err: any) => {
-      setLogs(prev => [...prev, `[System] ❌ Error: ${err.message}`]);
-    }
+    onError: (err: unknown) => {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setLogs(prev => [...prev, `[System] ❌ Error: ${errorMessage}`]);
+    },
   });
 
   const handleDeleteConfirmed = () => {
@@ -112,7 +108,10 @@ export default function DeleteUsersPage() {
                 className="input input-bordered join-item w-full sm:w-64 bg-base-200 focus:bg-base-100" 
                 placeholder="Filter domain (e.g. @dgpt.ro)"
                 value={filterDomain}
-                onChange={(e) => setFilterDomain(e.target.value)}
+                onChange={(e) => {
+                  setFilterDomain(e.target.value);
+                  setCurrentPage(1);
+                }}
               />
             </div>
           </div>
@@ -207,17 +206,17 @@ export default function DeleteUsersPage() {
                 <button 
                   className="btn btn-sm btn-ghost hover:bg-base-100"
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
+                  disabled={safeCurrentPage === 1}
                 >
                   « Prev
                 </button>
                 <div className="px-2 text-sm font-medium opacity-80">
-                  Page {currentPage} / {totalPages}
+                  Page {safeCurrentPage} / {totalPages}
                 </div>
                 <button 
                   className="btn btn-sm btn-ghost hover:bg-base-100"
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
+                  disabled={safeCurrentPage === totalPages}
                 >
                   Next »
                 </button>

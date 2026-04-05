@@ -85,7 +85,7 @@ export function VolunteerModal({ isOpen, onClose, onSuccess, projectId, voluntee
             <h3 className="text-xl font-bold text-accent">
                 {volunteer ? 'Editează Voluntar' : 'Adaugă Voluntar Nou'}
             </h3>
-            <button onClick={onClose} className="btn btn-ghost btn-sm btn-circle">
+            <button onClick={onClose} className="btn btn-ghost btn-sm btn-circle" type="button" aria-label="Închide formularul de voluntar">
               <X size={20} />
             </button>
           </div>

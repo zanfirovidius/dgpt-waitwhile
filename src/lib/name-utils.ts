@@ -12,7 +12,7 @@ export function normalizeName(name: string): string {
         'ş': 's', 'ţ': 't', 'Ş': 'S', 'Ţ': 'T' // Older cedilla variants
     };
 
-    let normalized = name.split('').map(char => charMap[char] || char).join('');
+    const normalized = name.split('').map(char => charMap[char] || char).join('');
     
     return normalized
         .toLowerCase()

@@ -1,13 +1,52 @@
 'use server';
 
 import { createAdminClient, createSessionClient } from '@/lib/appwrite-server';
-import { ID, Query } from 'node-appwrite';
-import { getPlatformSettings } from './platform';
+import type { ProjectFeedbackConfig as FeedbackValidationInput } from '@/lib/setup-validation';
 import { validateProjectFeedbackSetup } from '@/lib/setup-validation';
+import { ID } from 'node-appwrite';
+import { getPlatformSettings } from './platform';
 
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 const CONFIG_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_FEEDBACK_CONFIG_COLLECTION_ID!;
 const AUDIT_LOGS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_AUDIT_LOGS_COLLECTION_ID!;
+
+type AppwriteLikeError = {
+  code?: number;
+  message?: string;
+};
+
+type ProjectMetadataRecord = {
+  name?: string;
+  projectSlug?: string;
+  eventName?: string;
+  city?: string;
+  venue?: string;
+  locationName?: string;
+};
+
+function getErrorCode(error: unknown): number | undefined {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as AppwriteLikeError).code;
+    return typeof code === 'number' ? code : undefined;
+  }
+
+  return undefined;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as AppwriteLikeError).message;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+
+  return fallback;
+}
 
 export interface FeedbackConfig {
   $id?: string;
@@ -36,8 +75,8 @@ export async function getProjectFeedbackConfig(projectId: string): Promise<{ suc
     const { databases } = await createSessionClient();
     const doc = await databases.getDocument(DATABASE_ID, CONFIG_COLLECTION_ID, projectId);
     return { success: true, data: JSON.parse(JSON.stringify(doc)) as FeedbackConfig };
-  } catch (err: any) {
-    if (err.code === 404) {
+  } catch (err: unknown) {
+    if (getErrorCode(err) === 404) {
         return { success: false, error: 'Configurația de feedback nu a fost găsită' };
     }
     console.error('[FeedbackConfig] get error:', err);
@@ -50,20 +89,30 @@ export async function updateProjectFeedbackConfig(projectId: string, data: Parti
     const { databases, account } = await createSessionClient();
     
     // 1. Get current for audit log or handle missing
-    let currentDoc: any;
+    let currentDoc: FeedbackConfig;
     try {
-        currentDoc = await databases.getDocument(DATABASE_ID, CONFIG_COLLECTION_ID, projectId);
-    } catch (err: any) {
-        if (err.code === 404) {
+        currentDoc = JSON.parse(
+          JSON.stringify(await databases.getDocument(DATABASE_ID, CONFIG_COLLECTION_ID, projectId)),
+        ) as FeedbackConfig;
+    } catch (err: unknown) {
+        if (getErrorCode(err) === 404) {
             // Missing config (likely a legacy project), provision it now
             const settingsRes = await getPlatformSettings();
             const defaults = settingsRes.data;
             const { databases: adminDb } = await createAdminClient();
-            const projectDoc = await adminDb.getDocument(DATABASE_ID, process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!, projectId);
+            const projectDoc = JSON.parse(
+              JSON.stringify(
+                await adminDb.getDocument(
+                  DATABASE_ID,
+                  process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!,
+                  projectId,
+                ),
+              ),
+            ) as ProjectMetadataRecord;
             
-            const initial = {
+            const initial: Omit<FeedbackConfig, '$id' | 'setupCompleted' | 'setupMissingItemsJson'> = {
                 projectId,
-                projectSlug: (projectDoc as any).projectSlug || '',
+                projectSlug: projectDoc.projectSlug || '',
                 publicFeedbackFormStatus: 'draft',
                 operatorName: defaults?.operatorName || '',
                 operatorLegalName: defaults?.operatorLegalName || '',
@@ -79,7 +128,9 @@ export async function updateProjectFeedbackConfig(projectId: string, data: Parti
                 feedbackSuccessMessage: defaults?.defaultFeedbackSuccessMessage || '',
                 feedbackRetentionDays: defaults?.defaultFeedbackRetentionDays || 365,
             };
-            currentDoc = await databases.createDocument(DATABASE_ID, CONFIG_COLLECTION_ID, projectId, initial);
+            currentDoc = JSON.parse(
+              JSON.stringify(await databases.createDocument(DATABASE_ID, CONFIG_COLLECTION_ID, projectId, initial)),
+            ) as FeedbackConfig;
         } else {
             throw err;
         }
@@ -89,28 +140,37 @@ export async function updateProjectFeedbackConfig(projectId: string, data: Parti
     try {
         const actor = await account.get();
         actorUserId = actor.$id;
-    } catch (e) {
+    } catch {
         // Fallback for missing session or scopes (e.g. dev mode)
         console.warn('[FeedbackConfig] Could not identify actor for audit log');
     }
 
     // 2. Perform validation - FETCH PROJECT FOR METADATA
     const { databases: adminDbLocal } = await createAdminClient();
-    const projectDoc = await adminDbLocal.getDocument(DATABASE_ID, process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!, projectId);
+    const projectDoc = JSON.parse(
+      JSON.stringify(
+        await adminDbLocal.getDocument(
+          DATABASE_ID,
+          process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!,
+          projectId,
+        ),
+      ),
+    ) as ProjectMetadataRecord;
     
-    const updated = { 
+    const updated: FeedbackValidationInput = { 
         ...currentDoc, 
         ...data,
         // Sync metadata from project level for validation
-        eventName: (projectDoc as any).eventName || projectDoc.name || '',
-        city: (projectDoc as any).city || '',
-        venue: (projectDoc as any).venue || projectDoc.locationName || '',
-    } as any;
+        eventName: projectDoc.eventName || projectDoc.name || '',
+        city: projectDoc.city || '',
+        venue: projectDoc.venue || projectDoc.locationName || '',
+    };
     
     const validation = validateProjectFeedbackSetup(updated);
     
     // 3. Prepare clean data for update (strip system fields and metadata fields we now store at project level)
-    const { $id, $createdAt, $updatedAt, $permissions, $databaseId, $collectionId, projectId: pId, eventName, city, venue, ...cleanData } = data as any;
+    const cleanData: Partial<FeedbackConfig> = { ...data };
+    delete cleanData.$id;
 
     const finalData = {
       ...cleanData,
@@ -136,9 +196,9 @@ export async function updateProjectFeedbackConfig(projectId: string, data: Parti
     });
 
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[FeedbackConfig] update error:', err);
-    return { success: false, error: err.message || 'Failed to update configuration' };
+    return { success: false, error: getErrorMessage(err, 'Nu am putut actualiza configurația de feedback') };
   }
 }
 

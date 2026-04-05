@@ -103,7 +103,7 @@ export default function VolunteerDetailPage() {
   const totalHours = attendance.reduce((acc, curr) => acc + (curr.totalHoursDecimal || 0), 0);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* Header & Navigation */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -111,12 +111,12 @@ export default function VolunteerDetailPage() {
             <ArrowLeft size={24} />
           </Link>
           <div>
-            <h1 className="text-3xl font-black tracking-tighter flex items-center gap-3">
+            <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight">
               {volunteer.firstName} {volunteer.lastName}
             </h1>
             <div className="flex items-center gap-2 mt-1">
-              <span className="badge badge-accent badge-sm font-bold uppercase tracking-wider">{volunteer.activityCategory}</span>
-              <span className={`badge badge-sm font-bold ${volunteer.status === 'active' ? 'badge-success' : 'badge-ghost'}`}>
+              <span className="badge badge-outline badge-sm font-medium uppercase tracking-[0.14em]">{volunteer.activityCategory}</span>
+              <span className={`badge badge-sm font-medium ${volunteer.status === 'active' ? 'badge-success' : 'badge-ghost'}`}>
                 {volunteer.status === 'active' ? 'ACTIV' : 'INACTIV'}
               </span>
             </div>
@@ -143,14 +143,14 @@ export default function VolunteerDetailPage() {
         
         {/* Left Column: Profile Card */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="card bg-base-100 border border-base-200 shadow-xl rounded-3xl overflow-hidden">
-            <div className="bg-gradient-to-br from-accent/20 via-base-100 to-base-100 p-8 text-center border-b border-base-200">
+          <div className="card overflow-hidden rounded-2xl border border-base-200 bg-base-100 shadow-sm">
+            <div className="border-b border-base-200 bg-base-200/35 p-6 text-center">
               <div className="avatar placeholder mb-4">
-                <div className="bg-gradient-to-br from-accent/40 to-accent/60 text-white rounded-3xl w-24 h-24 shadow-2xl shadow-accent/20">
-                  <span className="text-3xl font-black">{volunteer.firstName?.[0]}{volunteer.lastName?.[0]}</span>
+                <div className="h-20 w-20 rounded-2xl bg-base-200 text-accent">
+                  <span className="text-2xl font-semibold">{volunteer.firstName?.[0]}{volunteer.lastName?.[0]}</span>
                 </div>
               </div>
-              <h2 className="text-xl font-bold">{volunteer.firstName} {volunteer.lastName}</h2>
+              <h2 className="text-xl font-semibold">{volunteer.firstName} {volunteer.lastName}</h2>
               <p className="text-xs text-base-content/50 font-medium">Voluntar din {new Date(volunteer.$createdAt!).toLocaleDateString('ro-RO')}</p>
             </div>
             
@@ -160,7 +160,7 @@ export default function VolunteerDetailPage() {
                   <Mail size={18} />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black opacity-30 uppercase tracking-widest">Email</p>
+                  <p className="text-[10px] font-semibold opacity-35 uppercase tracking-[0.16em]">Email</p>
                   <p className="font-bold">{volunteer.email || 'Nespecificat'}</p>
                 </div>
               </div>
@@ -169,7 +169,7 @@ export default function VolunteerDetailPage() {
                   <Phone size={18} />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black opacity-30 uppercase tracking-widest">Telefon</p>
+                  <p className="text-[10px] font-semibold opacity-35 uppercase tracking-[0.16em]">Telefon</p>
                   <p className="font-bold">{volunteer.phone || 'Nespecificat'}</p>
                 </div>
               </div>
@@ -178,7 +178,7 @@ export default function VolunteerDetailPage() {
                   <FileText size={18} />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black opacity-30 uppercase tracking-widest">Adresă</p>
+                  <p className="text-[10px] font-semibold opacity-35 uppercase tracking-[0.16em]">Adresă</p>
                   <p className="font-bold">{volunteer.address || 'Nespecificată'}</p>
                 </div>
               </div>
@@ -187,7 +187,7 @@ export default function VolunteerDetailPage() {
                   <CreditCard size={18} />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black opacity-30 uppercase tracking-widest">Identitate</p>
+                  <p className="text-[10px] font-semibold opacity-35 uppercase tracking-[0.16em]">Identitate</p>
                   <p className="font-bold">
                     {volunteer.cnp || volunteer.identitySeries || volunteer.identityNumber
                       ? `CNP ${volunteer.cnp || '-'} • CI ${volunteer.identitySeries || '-'} ${volunteer.identityNumber || '-'}`
@@ -199,22 +199,22 @@ export default function VolunteerDetailPage() {
           </div>
 
           {/* Waitwhile Status */}
-          <div className="card bg-base-100 border border-base-200 shadow-xl rounded-3xl overflow-hidden">
+          <div className="card overflow-hidden rounded-2xl border border-base-200 bg-base-100 shadow-sm">
             <div className="p-6 space-y-6">
               <div className="flex items-center justify-between">
-                <h3 className="font-black text-xs uppercase tracking-[0.2em] opacity-40">Status Waitwhile</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-[0.18em] opacity-45">Status Waitwhile</h3>
                 {volunteer.waitwhileAccountCreated ? (
-                  <span className="badge badge-success badge-sm font-black">ACTIV</span>
+                  <span className="badge badge-success badge-sm font-medium">ACTIV</span>
                 ) : (
-                  <span className="badge badge-ghost badge-sm font-black">FĂRĂ CONT</span>
+                  <span className="badge badge-ghost badge-sm font-medium">FĂRĂ CONT</span>
                 )}
               </div>
 
               {volunteer.waitwhileAccountCreated ? (
                 <div className="space-y-4">
-                  <div className="bg-success/5 border border-success/20 p-4 rounded-2xl">
-                    <p className="text-[10px] font-black text-success/60 uppercase tracking-wider mb-1">Email Utilizat</p>
-                    <p className="text-sm font-mono font-bold text-success break-all">{volunteer.waitwhileEmailUsed}</p>
+                  <div className="rounded-xl border border-base-200 bg-base-200/40 p-4">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-base-content/45">Email utilizat</p>
+                    <p className="break-all font-mono text-sm font-semibold text-base-content/80">{volunteer.waitwhileEmailUsed}</p>
                   </div>
                   <button 
                     onClick={handleWWDelete}
@@ -248,30 +248,36 @@ export default function VolunteerDetailPage() {
         <div className="lg:col-span-2 space-y-6">
           
           {/* Quick Stats */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-primary/5 border border-primary/10 p-6 rounded-3xl relative overflow-hidden group">
-              <Clock className="absolute -right-2 -bottom-2 text-primary/10 group-hover:scale-110 transition-transform duration-500" size={80} />
-              <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1 relative z-10">Ore Totale</p>
-              <p className="text-4xl font-black text-primary relative z-10">{totalHours.toFixed(1)}</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 text-base-content/45">
+                <Clock size={16} />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em]">Ore totale</p>
+              </div>
+              <p className="text-3xl font-semibold text-base-content">{totalHours.toFixed(1)}</p>
             </div>
-            <div className="bg-accent/5 border border-accent/10 p-6 rounded-3xl relative overflow-hidden group">
-              <Calendar className="absolute -right-2 -bottom-2 text-accent/10 group-hover:scale-110 transition-transform duration-500" size={80} />
-              <p className="text-[10px] font-black text-accent uppercase tracking-widest mb-1 relative z-10">Prezențe</p>
-              <p className="text-4xl font-black text-accent relative z-10">{attendance.length}</p>
+            <div className="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 text-base-content/45">
+                <Calendar size={16} />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em]">Prezențe</p>
+              </div>
+              <p className="text-3xl font-semibold text-base-content">{attendance.length}</p>
             </div>
-            <div className="bg-success/5 border border-success/10 p-6 rounded-3xl relative overflow-hidden group">
-              <History className="absolute -right-2 -bottom-2 text-success/10 group-hover:scale-110 transition-transform duration-500" size={80} />
-              <p className="text-[10px] font-black text-success uppercase tracking-widest mb-1 relative z-10">Validări</p>
-              <p className="text-4xl font-black text-success relative z-10">
+            <div className="rounded-2xl border border-base-200 bg-base-100 p-5 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 text-base-content/45">
+                <History size={16} />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em]">Validări</p>
+              </div>
+              <p className="text-3xl font-semibold text-base-content">
                 {attendance.filter(a => a.coordinatorValidated).length}
               </p>
             </div>
           </div>
 
           {/* Attendance History */}
-          <div className="card bg-base-100 border border-base-200 shadow-sm rounded-3xl p-8">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-black tracking-tight flex items-center gap-2">
+          <div className="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm sm:p-8">
+            <div className="mb-8 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
                 <History className="text-primary" /> Istoric Prezență
               </h3>
             </div>
@@ -280,17 +286,17 @@ export default function VolunteerDetailPage() {
               {attendance.length === 0 ? (
                 <div className="text-center py-20 opacity-30">
                   <Clock size={48} className="mx-auto mb-4" strokeWidth={1} />
-                  <p className="font-bold">Niciun record de prezență găsit</p>
-                  <p className="text-xs italic">Când voluntarul va face check-in, datele vor apărea aici.</p>
+                  <p className="font-bold">Nu există încă prezențe înregistrate</p>
+                  <p className="text-xs italic">După primul check-in, istoricul voluntarului va apărea aici.</p>
                 </div>
               ) : (
                 <table className="table">
                   <thead>
                     <tr className="border-b-2 border-base-200">
-                      <th className="font-black text-xs uppercase tracking-widest pl-0">Data</th>
-                      <th className="font-black text-xs uppercase tracking-widest">Interval</th>
-                      <th className="font-black text-xs uppercase tracking-widest text-center">Durată</th>
-                      <th className="font-black text-xs uppercase tracking-widest text-right">Status</th>
+                      <th className="pl-0 text-xs font-semibold uppercase tracking-[0.16em]">Data</th>
+                      <th className="text-xs font-semibold uppercase tracking-[0.16em]">Interval</th>
+                      <th className="text-center text-xs font-semibold uppercase tracking-[0.16em]">Durată</th>
+                      <th className="text-right text-xs font-semibold uppercase tracking-[0.16em]">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-base-200/50">
@@ -298,7 +304,7 @@ export default function VolunteerDetailPage() {
                       <tr key={entry.$id} className="hover:bg-base-200/30 transition-all">
                         <td className="py-4 pl-0">
                           <p className="font-bold">{new Date(entry.attendanceDate).toLocaleDateString('ro-RO', { day: '2-digit', month: 'long' })}</p>
-                          <p className="text-[10px] opacity-40 uppercase font-black">{entry.departmentRole}</p>
+                          <p className="text-[10px] opacity-40 uppercase font-semibold tracking-[0.14em]">{entry.departmentRole}</p>
                         </td>
                         <td className="py-4 font-medium text-xs">
                           <div className="flex items-center gap-2">
@@ -314,12 +320,12 @@ export default function VolunteerDetailPage() {
                           {entry.coordinatorValidated ? (
                             <div className="flex items-center justify-end gap-1 text-success">
                               <CheckCircle2 size={14} />
-                              <span className="text-[10px] font-black uppercase">Validat</span>
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">Validat</span>
                             </div>
                           ) : (
                             <div className="flex items-center justify-end gap-1 opacity-20">
                               <Clock size={14} />
-                              <span className="text-[10px] font-black uppercase">Preluat</span>
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">Preluat</span>
                             </div>
                           )}
                         </td>
@@ -332,20 +338,20 @@ export default function VolunteerDetailPage() {
           </div>
 
           {/* Future Modules Placeholders */}
-          <div className="grid grid-cols-2 gap-4 opacity-50 pointer-events-none grayscale">
-            <div className="bg-base-200 p-6 rounded-3xl border border-dashed border-base-300 flex items-center justify-between">
+          <div className="pointer-events-none grid grid-cols-2 gap-4 opacity-50 grayscale">
+            <div className="flex items-center justify-between rounded-2xl border border-dashed border-base-300 bg-base-100 p-6">
               <div className="flex items-center gap-4">
                 <CreditCard className="text-base-content/40" />
                 <span className="text-sm font-bold">Generare Ecuson</span>
               </div>
-              <span className="text-[10px] font-black uppercase bg-base-300 px-2 py-1 rounded-lg">Soon</span>
+              <span className="rounded-lg bg-base-200 px-2 py-1 text-[10px] font-semibold uppercase">În curând</span>
             </div>
-            <div className="bg-base-200 p-6 rounded-3xl border border-dashed border-base-300 flex items-center justify-between">
+            <div className="flex items-center justify-between rounded-2xl border border-dashed border-base-300 bg-base-100 p-6">
               <div className="flex items-center gap-4">
                 <Award className="text-base-content/40" />
                 <span className="text-sm font-bold">Generare Diplomă</span>
               </div>
-              <span className="text-[10px] font-black uppercase bg-base-300 px-2 py-1 rounded-lg">Soon</span>
+              <span className="rounded-lg bg-base-200 px-2 py-1 text-[10px] font-semibold uppercase">În curând</span>
             </div>
           </div>
         </div>

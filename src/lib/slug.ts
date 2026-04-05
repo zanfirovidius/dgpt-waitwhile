@@ -14,7 +14,7 @@ export function normalizeToSlug(text: string): string {
     'ş': 's', 'ţ': 't', 'Ş': 's', 'Ţ': 't' // Older cedilla variants
   };
 
-  let slug = text.split('').map(char => charMap[char] || char).join('');
+  const slug = text.split('').map(char => charMap[char] || char).join('');
   
   return slug
     .toLowerCase()

@@ -6,6 +6,7 @@ import ManualUserForm from '@/components/ManualUserForm';
 import PasteTable from '@/components/PasteTable';
 import Uploader from '@/components/Uploader';
 import UserGrid from '@/components/UserGrid';
+import { WAITWHILE_ROLE_OPTIONS } from '@/lib/waitwhile-user-roles';
 import { PlayCircle, Settings2, Users } from 'lucide-react';
 import { useState } from 'react';
 
@@ -34,16 +35,27 @@ export default function Home() {
   const [defaultRole, setDefaultRole] = useState<string>('SECRETARIAT');
   const [emailDomain, setEmailDomain] = useState('dgpt.ro');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [syncDone, setSyncDone] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  const selectedLocationName = locations.find((location) => location.id === selectedLocation)?.name || '';
+  const passwordModeSummary = generateRandomPasswords
+    ? 'Parole unice generate automat'
+    : defaultPassword.trim()
+      ? 'Parolă implicită aplicată unde lipsește'
+      : 'Parole generate doar când lipsesc';
+  const nextStepSummary = !selectedLocation
+    ? 'Alege locația și regulile implicite.'
+    : users.length === 0
+      ? 'Adaugă utilizatorii în lista de sincronizare.'
+      : 'Verifică lista și pornește sincronizarea.';
 
   // Function to run the Waitwhile sync
   const handleSync = async () => {
     if (!selectedLocation || users.length === 0) return;
     
     setIsProcessing(true);
-    setSyncDone(false);
-    setLogs([`[System] Starting Waitwhile sync for ${users.length} users into ${selectedLocation}...`]);
+    setLogs([
+      `[Sistem] Pornesc sincronizarea pentru ${users.length} ${users.length === 1 ? 'utilizator' : 'utilizatori'} în locația ${selectedLocationName || selectedLocation}.`,
+    ]);
 
     // Deep copy to allow updates
     const updatedUsers: ExtendedUser[] = [...users];
@@ -86,12 +98,12 @@ export default function Home() {
 
       if (res.success) {
         user.syncStatus = 'success';
-        user.syncMessage = 'Created successfully';
-        setLogs(prev => [...prev, `[Success] ${user.email} / ${finalPassword}`]);
+        user.syncMessage = 'Cont creat';
+        setLogs(prev => [...prev, `[Succes] ${user.email} sincronizat. Parolă: ${finalPassword}`]);
       } else {
         user.syncStatus = 'error';
-        user.syncMessage = res.error === 'user_email_exists' ? 'User already exists' : (res.error || 'Failed');
-        setLogs(prev => [...prev, `[Error] Failed to inject ${user.email}: ${user.syncMessage}`]);
+        user.syncMessage = res.error === 'user_email_exists' ? 'Utilizatorul există deja' : (res.error || 'Nu am putut crea contul');
+        setLogs(prev => [...prev, `[Eroare] ${user.email}: ${user.syncMessage}`]);
       }
 
       // Update state progressively so UI reflects status
@@ -99,136 +111,191 @@ export default function Home() {
     }
 
     setIsProcessing(false);
-    setSyncDone(true);
-    setLogs(prev => [...prev, `[System] ✅ Sync completed!`]);
+    setLogs(prev => [...prev, '[Sistem] ✅ Sincronizarea s-a încheiat.']);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Configuration Bar */}
-      <div className="card bg-base-100 shadow-xl border border-base-200">
-        <div className="card-body gap-6 sm:flex-row items-center">
-          <div className="flex-1 w-full relative z-20">
-            <h2 className="card-title text-base text-base-content/70 mb-2 flex items-center gap-2">
-              <Settings2 size={18} /> Configuration
-            </h2>
-            <LocationSelector 
-              selectedLocation={selectedLocation} 
-              onChange={setSelectedLocation} 
-              onLocationsLoaded={setLocations}
-            />
-          </div>
-          
-          
-          <div className="divider sm:divider-horizontal"></div>
+    <div className="ui-page-wash mx-auto max-w-7xl space-y-8">
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.85fr)]">
+        <div className="ui-surface-sky rounded-[1.75rem] border bg-base-100 p-6 shadow-sm sm:p-8">
+          <p className="ui-kicker ui-text-sky">
+            Sincronizare utilizatori
+          </p>
+          <h1 className="ui-display-title mt-3 max-w-3xl text-base-content">
+            Pregătește lista și rulează sincronizarea Waitwhile într-un singur flux.
+          </h1>
+          <p className="ui-body mt-3 text-base-content/65">
+            Configurezi locația și regulile implicite, adaugi utilizatorii, apoi verifici lista finală înainte de sincronizare.
+          </p>
+        </div>
 
-          <div className="flex-1 w-full">
-            <h2 className="card-title text-base text-base-content/70 mb-2 invisible hidden sm:block">
-              &nbsp;
-            </h2>
-            <div className="form-control w-full max-w-xs">
-              <label className="label">
-                <span className="label-text font-semibold">Email Domain</span>
-              </label>
-              <div className="join w-full">
-                <span className="join-item bg-base-200 border border-base-content/20 flex items-center px-3 font-mono text-sm opacity-60">
-                  @
-                </span>
-                <input 
-                  type="text" 
-                  className="input input-bordered join-item w-full bg-base-200 focus:bg-base-100" 
-                  value={emailDomain}
-                  onChange={(e) => setEmailDomain(e.target.value)}
-                  placeholder="dgpt.ro"
+        <div className="ui-surface-teal rounded-[1.75rem] border bg-base-100 p-5 shadow-sm sm:p-6">
+          <p className="ui-kicker ui-text-teal">Stare curentă</p>
+          <div className="mt-4 space-y-4">
+            <div className="border-b border-base-200 pb-4">
+              <p className="ui-label">Locație</p>
+              <p className="mt-1 text-[0.95rem] font-semibold text-base-content">
+                {selectedLocationName || 'Nicio locație selectată'}
+              </p>
+            </div>
+            <div className="border-b border-base-200 pb-4">
+              <p className="ui-label">Listă pregătită</p>
+              <p className="ui-tabular mt-1 text-[0.95rem] font-semibold text-base-content">
+                {users.length === 0
+                  ? 'Lista este goală'
+                  : `${users.length} ${users.length === 1 ? 'utilizator pregătit' : 'utilizatori pregătiți'}`}
+              </p>
+            </div>
+            <div>
+              <p className="ui-label">Parole</p>
+              <p className="mt-1 text-[0.95rem] font-semibold text-base-content">{passwordModeSummary}</p>
+            </div>
+          </div>
+          <div className="ui-panel-amber mt-5 rounded-2xl border px-4 py-3">
+            <p className="ui-label">Următorul pas</p>
+            <p className="mt-1 text-[0.95rem] leading-6 text-base-content/65">{nextStepSummary}</p>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(21rem,24rem)_minmax(0,1fr)]">
+        <div className="space-y-6">
+          <section className="ui-surface-sky rounded-[1.75rem] border bg-base-100 p-5 shadow-sm sm:p-6">
+            <div className="flex items-start gap-3">
+              <div className="ui-icon-chip-sky rounded-2xl p-2">
+                <Settings2 size={18} />
+              </div>
+              <div>
+                <p className="ui-kicker ui-text-sky">Pasul 1</p>
+                <h2 className="ui-section-title mt-1 text-base-content">Configurare sincronizare</h2>
+                <p className="ui-body mt-1 text-base-content/60">
+                  Alege locația de lucru și stabilește cum vor fi generate adresele de email și parolele.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-5">
+              <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
+                <div className="ui-panel-sky rounded-2xl border p-4">
+                  <LocationSelector
+                    selectedLocation={selectedLocation}
+                    onChange={setSelectedLocation}
+                    onLocationsLoaded={setLocations}
+                  />
+                </div>
+
+                <div className="ui-panel-sky rounded-2xl border p-4">
+	                  <div className="form-control w-full">
+	                    <label className="label px-0">
+	                      <span className="ui-field-label">Domeniu email generat</span>
+	                    </label>
+                    <div className="join w-full">
+                      <span className="join-item flex items-center border border-base-content/20 bg-base-200 px-3 font-mono text-sm opacity-60">
+                        @
+                      </span>
+                      <input
+                        type="text"
+                        className="input input-bordered join-item w-full bg-base-200 focus:bg-base-100"
+                        value={emailDomain}
+                        onChange={(e) => setEmailDomain(e.target.value)}
+                        placeholder="dgpt.ro"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="ui-panel-amber rounded-2xl border px-4 py-3">
+                <label className="flex cursor-pointer items-start gap-4">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary mt-1"
+                    checked={generateRandomPasswords}
+                    onChange={(e) => setGenerateRandomPasswords(e.target.checked)}
+                  />
+	                  <span className="label-text flex flex-col gap-1">
+	                    <span className="ui-field-label text-base-content">Generează parole automat</span>
+	                    <span className="ui-body text-base-content/60">
+	                      Ignoră parola implicită și creează o parolă unică pentru fiecare cont nou sincronizat.
+	                    </span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="ui-surface-teal rounded-[1.75rem] border bg-base-100 p-5 shadow-sm sm:p-6">
+            <div className="flex items-start gap-3">
+              <div className="ui-icon-chip-teal rounded-2xl p-2">
+                <Users size={18} />
+              </div>
+              <div>
+                <p className="ui-kicker ui-text-teal">Pasul 2</p>
+                <h2 className="ui-section-title mt-1 text-base-content">Pregătește lista</h2>
+                <p className="ui-body mt-1 text-base-content/60">
+                  Importă din Excel, adaugă manual sau lipește direct un tabel copiat din foaie.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div className="ui-panel-teal rounded-2xl border p-4">
+	                <label className="label px-0">
+	                  <span className="ui-field-label">Rol implicit</span>
+	                </label>
+                <select
+                  className="select select-bordered w-full bg-base-200 focus:bg-base-100"
+                  value={defaultRole}
+                  onChange={(e) => setDefaultRole(e.target.value)}
+                >
+                  {WAITWHILE_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="ui-panel-teal rounded-2xl border p-4">
+	                <label className="label px-0">
+	                  <span className="ui-field-label">Parolă implicită</span>
+	                </label>
+                <input
+                  type="text"
+                  className="input input-bordered w-full bg-base-200 font-mono focus:bg-base-100"
+                  placeholder="Lasă gol pentru generare automată"
+                  value={defaultPassword}
+                  onChange={(e) => setDefaultPassword(e.target.value)}
                 />
               </div>
             </div>
-          </div>
-          
-          <div className="divider sm:divider-horizontal"></div>
-          
-          <div className="flex-1 w-full flex items-center h-full pt-2 sm:pt-8">
-            <label className="cursor-pointer label justify-start gap-4">
-              <input 
-                type="checkbox" 
-                className="toggle toggle-primary" 
-                checked={generateRandomPasswords}
-                onChange={(e) => setGenerateRandomPasswords(e.target.checked)}
-              />
-              <span className="label-text flex flex-col">
-                <span className="font-semibold">Auto-generate Passwords</span>
-                    <span className="text-xs text-base-content/60">
-                      If enabled, ignore defaults and generate random passwords for everyone
-                    </span>
-              </span>
-            </label>
-          </div>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column for Input Methods */}
-        <div className="space-y-6 lg:col-span-1 h-full">
-          <div className="card bg-base-100 shadow-xl border border-base-200 h-full">
-            <div className="card-body">
-              <h2 className="card-title text-lg flex items-center gap-2">
-                <Users size={20} className="text-primary" /> Add Users
-              </h2>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text font-semibold">Default Role (Bulk)</span>
-                  </label>
-                  <select
-                    className="select select-bordered w-full bg-base-200 focus:bg-base-100"
-                    value={defaultRole}
-                    onChange={(e) => setDefaultRole(e.target.value)}
-                  >
-                    <option value="SECRETARIAT">Secretariat</option>
-                    <option value="SEF-CABINET">Sef Cabinet</option>
-                  </select>
-                </div>
-
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text font-semibold">Default Password (Bulk)</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input input-bordered w-full bg-base-200 focus:bg-base-100 font-mono"
-                    placeholder="Leave blank to auto-generate"
-                    value={defaultPassword}
-                    onChange={(e) => setDefaultPassword(e.target.value)}
-                  />
-                </div>
-              </div>
-              
-              <div role="tablist" className="tabs tabs-boxed mt-4 bg-base-200/50 p-1">
-                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold" aria-label="Excel Upload" defaultChecked />
-                <div role="tabpanel" className="tab-content py-6">
-                  <Uploader 
-                    onUsersParsed={(newUsers: ExtendedUser[]) => setUsers([...users, ...newUsers])} 
+            <div className="ui-panel-teal mt-6 rounded-2xl border p-2">
+              <div role="tablist" className="tabs tabs-boxed bg-transparent p-1">
+                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold" aria-label="Import Excel" defaultChecked />
+                <div role="tabpanel" className="tab-content px-2 py-5">
+                  <Uploader
+                    onUsersParsed={(newUsers: ExtendedUser[]) => setUsers([...users, ...newUsers])}
                     selectedLocation={selectedLocation}
                     emailDomain={emailDomain}
                     defaultRole={defaultRole}
                   />
                 </div>
 
-                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold whitespace-nowrap" aria-label="Manual Entry" />
-                <div role="tabpanel" className="tab-content py-6">
-                  <ManualUserForm 
-                    onAddUser={(user: ExtendedUser) => setUsers([...users, user])} 
+                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold whitespace-nowrap" aria-label="Adăugare manuală" />
+                <div role="tabpanel" className="tab-content px-2 py-5">
+                  <ManualUserForm
+                    onAddUser={(user: ExtendedUser) => setUsers([...users, user])}
                     selectedLocation={selectedLocation}
                     emailDomain={emailDomain}
                     defaultRole={defaultRole}
                   />
                 </div>
 
-                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold whitespace-nowrap" aria-label="Paste Data" />
-                <div role="tabpanel" className="tab-content py-6">
-                  <PasteTable 
-                    onUsersParsed={(newUsers: ExtendedUser[]) => setUsers([...users, ...newUsers])} 
+                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold whitespace-nowrap" aria-label="Lipire tabel" />
+                <div role="tabpanel" className="tab-content px-2 py-5">
+                  <PasteTable
+                    onUsersParsed={(newUsers: ExtendedUser[]) => setUsers([...users, ...newUsers])}
                     selectedLocation={selectedLocation}
                     emailDomain={emailDomain}
                     defaultRole={defaultRole}
@@ -236,70 +303,103 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </div>
+          </section>
         </div>
 
-        {/* Right column for Grid & Actions */}
-        <div className="lg:col-span-2 space-y-6 h-full">
-          <div className="card bg-base-100 shadow-xl border border-base-200 h-full flex flex-col">
-            <div className="card-body p-0 sm:p-6 overflow-hidden">
-              <div className="flex justify-between items-center mb-4 px-4 sm:px-0">
+        <div className="space-y-6">
+          <section className="ui-surface-amber rounded-[1.75rem] border bg-base-100 shadow-sm">
+            <div className="border-b border-base-200 p-5 sm:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 className="card-title text-lg">User Preview</h2>
-                  <p className="text-sm text-base-content/60">
-                    {users.length} {users.length === 1 ? 'user' : 'users'} ready to sync
+                  <p className="ui-kicker ui-text-amber">Pasul 3</p>
+                  <h2 className="ui-section-title mt-1 text-base-content">Revizuire și rulare</h2>
+                  <p className="ui-body mt-1 text-base-content/60">
+                    Verifică lista finală, ajustează parolele unde este nevoie și pornește sincronizarea când totul este pregătit.
                   </p>
                 </div>
-                
-                {users.length > 0 && (
-                  <button 
+                {users.length > 0 ? (
+                  <button
                     onClick={() => setUsers([])}
                     className="btn btn-ghost btn-sm text-error"
                   >
-                    Clear All
+                    Golește lista
                   </button>
-                )}
+                ) : null}
               </div>
 
-              <UserGrid 
-                users={users} 
-                setUsers={setUsers} 
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="ui-badge-sky ui-tabular gap-1 px-3 py-3 text-[0.72rem] font-medium">
+                  {selectedLocationName || 'Fără locație selectată'}
+                </span>
+                <span className="ui-badge-teal ui-tabular gap-1 px-3 py-3 text-[0.72rem] font-medium">
+                  {users.length === 0 ? 'Lista este goală' : `${users.length} ${users.length === 1 ? 'utilizator' : 'utilizatori'}`}
+                </span>
+                <span className="ui-badge-amber gap-1 px-3 py-3 text-[0.72rem] font-medium">
+                  {passwordModeSummary}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 sm:px-6 sm:pb-6">
+              <UserGrid
+                users={users}
+                setUsers={setUsers}
               />
-              
-              {users.length > 0 && (
-                <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-end">
-                  <button 
+
+              {users.length > 0 ? (
+                <div className="mt-6 flex flex-col gap-4 border-t border-base-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="ui-body text-base-content/60">
+                    Verifică emailurile și parolele înainte de rulare. Lista se sincronizează exact în forma afișată aici.
+                  </p>
+                  <button
                     disabled={!selectedLocation || isProcessing}
                     onClick={handleSync}
-                    className="btn btn-primary btn-lg gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+                    className="btn ui-btn-brand btn-lg gap-2 rounded-xl shadow-sm"
                   >
                     {isProcessing ? (
                       <span className="loading loading-spinner"></span>
                     ) : (
                       <PlayCircle />
                     )}
-                    Execute Pipeline
+                    Rulează sincronizarea
                   </button>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="ui-surface-sky rounded-[1.75rem] border bg-base-100 shadow-sm">
+            <div className="border-b border-base-200 p-5 sm:p-6">
+              <p className="ui-kicker ui-text-sky">Suport</p>
+              <h2 className="ui-section-title mt-1 text-base-content">Jurnal sincronizare</h2>
+              <p className="ui-body mt-1 text-base-content/60">
+                Mesajele apar cronologic în timpul rulării, pentru a verifica rapid ce s-a sincronizat și unde au apărut blocaje.
+              </p>
+            </div>
+
+            <div className="ui-panel-sky ui-tabular max-h-64 overflow-y-auto rounded-b-[1.75rem] px-4 py-4 font-mono text-[0.82rem] leading-6 sm:px-6">
+              {logs.length === 0 ? (
+                <p className="opacity-50">Așteaptă rularea sincronizării...</p>
+              ) : (
+                <div className="space-y-2">
+                  {logs.map((log, idx) => (
+                    <div
+                      key={idx}
+                      className={
+                        log.includes('[Eroare]')
+                          ? 'text-error'
+                          : log.includes('[Succes]') || log.includes('✅')
+                            ? 'text-success'
+                            : 'text-info'
+                      }
+                    >
+                      {log}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Terminal Logs */}
-      <div className="mockup-code bg-base-300 text-base-content border border-base-200 mt-6 shadow-xl w-full">
-        <div className="px-5 mb-2 opacity-50 text-xs">Pipeline Operations Logs</div>
-        <div className="max-h-64 overflow-y-auto">
-          {logs.length === 0 ? (
-            <pre data-prefix="$"><code className="opacity-50">Waiting for commands...</code></pre>
-          ) : (
-            logs.map((log, idx) => (
-              <pre data-prefix={log.includes('[Error]') ? "!" : ">"} key={idx} className={log.includes('[Error]') ? 'text-error font-semibold' : log.includes('[Success]') || log.includes('✅') ? 'text-success' : 'text-info'}>
-                <code>{log}</code>
-              </pre>
-            ))
-          )}
+          </section>
         </div>
       </div>
     </div>

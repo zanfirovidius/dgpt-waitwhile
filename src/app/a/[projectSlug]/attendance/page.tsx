@@ -187,22 +187,22 @@ export default function PublicAttendancePage() {
             <div className="max-w-xl mx-auto space-y-6">
                 
                 {/* Header Card */}
-                <div className="bg-gradient-to-br from-primary to-secondary p-8 rounded-[2rem] text-primary-content shadow-xl shadow-primary/20 relative overflow-hidden">
-                     <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl" />
-                     <div className="relative z-10 space-y-2 text-center">
-                        <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+                <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-6 shadow-sm sm:p-8">
+                     <div className="space-y-3 text-center">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/45">Prezență voluntari</div>
+                        <h1 className="text-2xl sm:text-[2rem] font-semibold tracking-tight leading-tight text-base-content">
                             {project?.eventName || project?.name}
                         </h1>
-                        <div className="flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider opacity-80">
+                        <div className="flex items-center justify-center gap-2 text-xs font-medium text-base-content/55">
                             <MapPin size={14} /> {project?.city ? `${project.city}${project.venue ? `, ${project.venue}` : ''}` : (project?.locationName || 'Locație nespecificată')}
                         </div>
-                        <p className="text-sm opacity-90 font-medium pt-2">
-                             Prezență Voluntari
+                        <p className="pt-1 text-sm font-medium text-base-content/65">
+                             Formular de check-in și check-out
                         </p>
                      </div>
                 </div>
 
-                <div className="bg-base-100 rounded-[2rem] shadow-xl border border-base-300/50 overflow-hidden flex flex-col animate-in fade-in zoom-in duration-300">
+                <div className="flex flex-col overflow-hidden rounded-[1.75rem] border border-base-200 bg-base-100 shadow-sm">
                     
                     {/* Progress Bar */}
                     <div className="w-full h-1 bg-base-200">
@@ -225,7 +225,7 @@ export default function PublicAttendancePage() {
                         {step === 'access' && config?.attendanceAccessMode === 'token' && (
                             <form onSubmit={handleAccessSubmit} className="space-y-6">
                                 <div className="text-center space-y-2">
-                                    <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto text-primary">
+                                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-base-200 text-primary">
                                         <ShieldCheck size={32} />
                                     </div>
                                     <h2 className="text-xl font-bold">Verificare Acces</h2>
@@ -241,7 +241,7 @@ export default function PublicAttendancePage() {
                                         required
                                     />
                                 </div>
-                                <button className="btn btn-primary btn-lg w-full rounded-2xl gap-2 font-bold shadow-xl shadow-primary/20">
+                                <button className="btn btn-primary btn-lg w-full rounded-xl gap-2 font-semibold shadow-sm">
                                     Continuă <ChevronRight size={20} />
                                 </button>
                             </form>
@@ -334,10 +334,10 @@ export default function PublicAttendancePage() {
                                                     key={role}
                                                     type="button"
                                                     onClick={() => setFormData({ ...formData, departmentRole: role })}
-                                                    className={`btn btn-sm rounded-xl px-4 h-11 border-none transition-all flex-1 min-w-[120px] sm:flex-initial ${
+                                                    className={`btn btn-sm rounded-xl px-4 h-11 flex-1 min-w-[120px] sm:flex-initial ${
                                                         formData.departmentRole === role 
-                                                        ? 'btn-primary shadow-xl shadow-primary/20 scale-105 font-black' 
-                                                        : 'bg-base-200 hover:bg-base-300 text-base-content/70 font-bold'
+                                                        ? 'btn-ghost border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15 font-semibold' 
+                                                        : 'btn-ghost border border-base-200 bg-base-200/50 text-base-content/70 hover:bg-base-200 font-medium'
                                                     }`}
                                                 >
                                                     {role}
@@ -346,7 +346,7 @@ export default function PublicAttendancePage() {
                                         </div>
                                     </div>
                                 </div>
-                                <button className="btn btn-primary btn-lg w-full rounded-2xl gap-2 font-bold shadow-xl shadow-primary/20">
+                                <button className="btn btn-primary btn-lg w-full rounded-xl gap-2 font-semibold shadow-sm">
                                     Continuă <ChevronRight size={20} />
                                 </button>
                             </form>
@@ -360,26 +360,26 @@ export default function PublicAttendancePage() {
                                     <p className="text-sm opacity-60">Alege tipul de acțiune pentru astăzi.</p>
                                 </div>
                                 <div className="grid grid-cols-1 gap-4">
-                                    <button 
+                                    <button
                                         onClick={() => handleActionSelect('check-in')}
-                                        className="btn btn-lg h-32 flex flex-col gap-2 rounded-3xl border-2 border-primary/20 hover:border-primary hover:bg-primary/5 transition-all text-primary"
+                                        className="btn btn-lg h-28 flex flex-col gap-3 rounded-2xl border border-primary/15 bg-primary/[0.04] text-base-content shadow-none transition-colors hover:bg-primary/[0.08]"
                                         disabled={isSubmitting}
                                     >
-                                        {isSubmitting && formData.action === 'check-in' ? <span className="loading loading-spinner"></span> : <LogIn size={32} />}
+                                        {isSubmitting && formData.action === 'check-in' ? <span className="loading loading-spinner"></span> : <LogIn size={28} className="text-primary/80" />}
                                         <div className="flex flex-col">
-                                            <span className="font-black text-lg">CHECK-IN</span>
-                                            <span className="text-[10px] opacity-60 font-bold uppercase tracking-widest">Începe activitatea</span>
+                                            <span className="text-base font-semibold">Check-in</span>
+                                            <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-base-content/45">Începe activitatea</span>
                                         </div>
                                     </button>
                                     <button 
                                         onClick={() => handleActionSelect('check-out')}
-                                        className="btn btn-lg h-32 flex flex-col gap-2 rounded-3xl border-2 border-secondary/20 hover:border-secondary hover:bg-secondary/5 transition-all text-secondary"
+                                        className="btn btn-lg h-28 flex flex-col gap-3 rounded-2xl border border-base-200 bg-base-100 text-base-content shadow-none transition-colors hover:bg-base-200/50"
                                         disabled={isSubmitting}
                                     >
-                                        <LogOut size={32} />
+                                        <LogOut size={28} className="text-base-content/70" />
                                         <div className="flex flex-col">
-                                            <span className="font-black text-lg">CHECK-OUT</span>
-                                            <span className="text-[10px] opacity-60 font-bold uppercase tracking-widest">Finalizează activitatea</span>
+                                            <span className="text-base font-semibold">Check-out</span>
+                                            <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-base-content/45">Finalizează activitatea</span>
                                         </div>
                                     </button>
                                 </div>
@@ -401,9 +401,9 @@ export default function PublicAttendancePage() {
                                     <div className="form-control">
                                         <label className="label"><span className="label-text font-bold text-center w-full">Minute de pauză (total)</span></label>
                                         <div className="flex items-center gap-4 justify-center">
-                                            <button className="btn btn-circle btn-outline btn-primary" onClick={() => setFormData(f => ({ ...f, breakMinutes: Math.max(0, f.breakMinutes - 15) }))}>-15</button>
-                                            <span className="text-3xl font-black w-20 text-center">{formData.breakMinutes}</span>
-                                            <button className="btn btn-circle btn-outline btn-primary" onClick={() => setFormData(f => ({ ...f, breakMinutes: f.breakMinutes + 15 }))}>+15</button>
+                                            <button className="btn btn-circle btn-outline btn-sm border-base-300 text-base-content/70 hover:border-base-400" onClick={() => setFormData(f => ({ ...f, breakMinutes: Math.max(0, f.breakMinutes - 15) }))}>-15</button>
+                                            <span className="w-20 text-center text-2xl font-semibold">{formData.breakMinutes}</span>
+                                            <button className="btn btn-circle btn-outline btn-sm border-base-300 text-base-content/70 hover:border-base-400" onClick={() => setFormData(f => ({ ...f, breakMinutes: f.breakMinutes + 15 }))}>+15</button>
                                         </div>
                                     </div>
                                 )}
@@ -421,7 +421,9 @@ export default function PublicAttendancePage() {
                                             />
                                             <button 
                                                 onClick={() => sigCanvas.current?.clear()}
-                                                className="absolute bottom-2 right-2 btn btn-xs btn-ghost gap-1 opacity-40 hover:opacity-100"
+                                                className="absolute bottom-2 right-2 btn btn-sm btn-ghost gap-1 opacity-60 hover:opacity-100"
+                                                type="button"
+                                                aria-label="Șterge semnătura"
                                             >
                                                 <RefreshCw size={10} /> Șterge
                                             </button>
@@ -448,7 +450,7 @@ export default function PublicAttendancePage() {
 
                                 <button 
                                     onClick={() => handleSubmit()}
-                                    className="btn btn-primary btn-lg w-full rounded-2xl gap-2 font-bold shadow-xl shadow-primary/20"
+                                    className="btn btn-primary btn-lg w-full rounded-xl gap-2 font-semibold shadow-sm"
                                     disabled={isSubmitting}
                                 >
                                     {isSubmitting ? <span className="loading loading-spinner"></span> : <><CheckCircle2 size={20} /> Salvează și Închide</>}
@@ -462,17 +464,17 @@ export default function PublicAttendancePage() {
 
                         {/* STEP: SUCCESS */}
                         {step === 'success' && (
-                            <div className="py-8 text-center space-y-8 animate-in fade-in zoom-in duration-500">
+                            <div className="py-8 text-center space-y-8">
                                 <div className="space-y-2">
-                                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-primary opacity-60">Prezență Voluntari</div>
-                                    <div className="text-xs font-black uppercase tracking-widest opacity-30">Din Grija Pentru Tine</div>
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-base-content/45">Prezență voluntari</div>
+                                    <div className="text-xs font-semibold uppercase tracking-widest opacity-25">Din Grija Pentru Tine</div>
                                 </div>
 
                                 <div className="space-y-4">
-                                    <div className="w-24 h-24 bg-success/10 text-success rounded-full flex items-center justify-center mx-auto shadow-inner mb-2">
-                                        <CheckCircle2 size={48} />
+                                    <div className="mx-auto mb-2 flex h-20 w-20 items-center justify-center rounded-full bg-success/10 text-success">
+                                        <CheckCircle2 size={40} />
                                     </div>
-                                    <h1 className="text-3xl font-black tracking-tight text-base-content">Excelent!</h1>
+                                    <h1 className="text-2xl font-semibold tracking-tight text-base-content">Confirmat</h1>
                                     <p className="text-base font-medium text-base-content/60 leading-relaxed px-4">
                                         {formData.action === 'check-in' 
                                             ? (config?.successMessageCheckIn || 'Check-in înregistrat cu succes!')
@@ -480,16 +482,16 @@ export default function PublicAttendancePage() {
                                     </p>
                                 </div>
 
-                                <div className="bg-base-200/50 p-6 rounded-3xl mx-4 space-y-1 border border-base-300/30">
-                                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Status curent</p>
+                                <div className="mx-4 space-y-2 rounded-2xl border border-base-200 bg-base-200/40 p-6">
+                                    <p className="text-[10px] font-semibold uppercase tracking-widest opacity-40">Status curent</p>
                                     <p className="font-bold text-lg">{formData.volunteerFullName}</p>
-                                    <p className="text-sm badge badge-ghost uppercase font-black text-[10px] py-3">{formData.action === 'check-in' ? 'Activ (La treabă)' : 'Finalizat (Liber)'}</p>
+                                    <p className="badge badge-ghost py-3 text-[10px] font-semibold uppercase">{formData.action === 'check-in' ? 'Activ (La treabă)' : 'Finalizat (Liber)'}</p>
                                 </div>
 
                                 <div className="pt-4 px-4">
                                     <button 
                                         onClick={() => window.location.reload()}
-                                        className="btn btn-primary btn-block btn-lg rounded-2xl shadow-xl shadow-primary/20 gap-3"
+                                        className="btn btn-primary btn-block btn-lg rounded-xl gap-3 shadow-sm"
                                     >
                                         Închide
                                     </button>
@@ -501,8 +503,8 @@ export default function PublicAttendancePage() {
                 </div>
 
                 {/* Privacy Section (Standardized with Feedback) */}
-                <div className="bg-base-200 p-6 rounded-2xl space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-base-content/40">
+                <div className="rounded-2xl border border-base-200 bg-base-100 p-6 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/40">
                         <ShieldCheck size={16} /> Confidențialitatea datelor (GDPR)
                     </div>
                     <div className="text-[10px] text-base-content/60 max-h-32 overflow-y-auto pr-2 leading-relaxed prose-markdown">
@@ -513,8 +515,8 @@ export default function PublicAttendancePage() {
                     </div>
                 </div>
 
-                <div className="text-center pb-8 opacity-20 hover:opacity-100 transition-opacity">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-base-content">Din Grija Pentru Tine</p>
+                <div className="pb-8 text-center opacity-25">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-base-content">Din Grija Pentru Tine</p>
                 </div>
             </div>
         </div>

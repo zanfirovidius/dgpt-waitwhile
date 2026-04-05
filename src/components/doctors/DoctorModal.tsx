@@ -121,7 +121,7 @@ export function DoctorModal({ isOpen, doctor, onClose, onSaved }: DoctorModalPro
               Registru master la nivel de platformă
             </p>
           </div>
-          <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>
+          <button type="button" className="btn btn-ghost btn-sm btn-circle" onClick={onClose} aria-label="Închide formularul de medic">
             <X size={18} />
           </button>
         </div>

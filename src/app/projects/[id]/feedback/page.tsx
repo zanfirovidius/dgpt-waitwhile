@@ -1,22 +1,21 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { getProject, Project } from '@/app/actions/projects';
 import { getProjectFeedbackConfig, updateProjectFeedbackConfig, resetProjectFeedbackConfigToDefaults, FeedbackConfig } from '@/app/actions/feedback-config';
 import { getProjectSubmissions, updateSubmissionStatus, getProjectSubmissionsCSV, FeedbackSubmission, deleteSubmission } from '@/app/actions/submissions';
 import { 
-  ArrowLeft, Save, RefreshCw, MessageSquare, List, Settings, 
-  CheckCircle2, AlertCircle, Clock, Trash2, ExternalLink,
-  ChevronRight, MoreVertical, Search, Download,
-  User, Mail, Phone, Calendar, MapPin, ShieldCheck, QrCode
+  ArrowLeft, Save, RefreshCw, MessageSquare, Settings, 
+  CheckCircle2, AlertCircle, Clock, ExternalLink,
+  ChevronRight, MoreVertical, Download,
+  User, Mail, Phone, Calendar, MapPin, ShieldCheck
 } from 'lucide-react';
 import Link from 'next/link';
 import QRCodeModule from '@/components/QRCodeModule';
 
 export default function ProjectFeedbackPage() {
   const params = useParams();
-  const router = useRouter();
   const projectId = typeof params.id === 'string' ? params.id : params.id?.[0];
 
   const [project, setProject] = useState<Project | null>(null);
@@ -353,7 +352,9 @@ export default function ProjectFeedbackPage() {
                                     </td>
                                     <td>
                                         <div className="dropdown dropdown-end">
-                                            <label tabIndex={0} className="btn btn-ghost btn-xs"><MoreVertical size={14} /></label>
+                                            <button type="button" tabIndex={0} className="btn btn-ghost btn-xs" aria-label={`Acțiuni pentru feedback ${sub.$id}`}>
+                                              <MoreVertical size={14} />
+                                            </button>
                                             <ul tabIndex={0} className="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-40 border border-base-200">
                                                 <li><button onClick={() => setSelectedSubmission(sub)}>Vezi Detalii</button></li>
                                                 <li className="text-error"><button onClick={() => handleDeleteSubmission(sub.$id!)}>Șterge</button></li>
@@ -489,7 +490,7 @@ export default function ProjectFeedbackPage() {
                 <h3 className="text-xl font-bold">Detalii Feedback</h3>
                 <p className="text-[10px] opacity-70 uppercase tracking-widest font-black">ID Document: {selectedSubmission.$id}</p>
               </div>
-              <button className="btn btn-sm btn-circle btn-ghost relative z-10" onClick={() => setSelectedSubmission(null)}>✕</button>
+              <button className="btn btn-sm btn-circle btn-ghost relative z-10" onClick={() => setSelectedSubmission(null)} aria-label="Închide detaliile feedbackului">✕</button>
             </div>
             
             <div className="p-8 space-y-8 bg-base-100">

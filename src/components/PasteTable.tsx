@@ -1,6 +1,7 @@
 'use client';
 
 import { ExtendedUser } from '@/app/page';
+import { normalizeWaitwhileRole } from '@/lib/waitwhile-user-roles';
 import { ClipboardPaste } from 'lucide-react';
 import { useState } from 'react';
 
@@ -18,12 +19,12 @@ export default function PasteTable({ onUsersParsed, selectedLocation, emailDomai
   const handleProcess = () => {
     setError(null);
     if (!selectedLocation) {
-      setError("Please select a location first.");
+      setError('Selectează mai întâi locația în care vrei să adaugi utilizatorii.');
       return;
     }
 
     if (!rawData.trim()) {
-      setError("Please paste some data first.");
+      setError('Lipește mai întâi datele copiate din Excel.');
       return;
     }
 
@@ -42,10 +43,7 @@ export default function PasteTable({ onUsersParsed, selectedLocation, emailDomai
           let role = defaultRole; // Default fallback
           
           if (cols.length >= 3 && cols[2]) {
-            const rawRole = cols[2].toUpperCase();
-            if (rawRole === 'SECRETARIAT' || rawRole === 'SEF-CABINET') {
-              role = rawRole;
-            }
+            role = normalizeWaitwhileRole(cols[2], defaultRole);
           }
 
           if (name && phone) {
@@ -65,35 +63,37 @@ export default function PasteTable({ onUsersParsed, selectedLocation, emailDomai
       }
 
       if (parsedUsers.length === 0) {
-        throw new Error("Could not parse any valid users. Please ensure you are pasting at least Name and Phone columns side-by-side (separated by tabs).");
+        throw new Error('Nu am putut identifica utilizatori valizi. Lipește cel puțin coloanele Nume și Telefon, una lângă alta.');
       }
 
       onUsersParsed(parsedUsers);
       setRawData(''); // Clear after successful add
-    } catch (err: any) {
-      setError(err.message || "Failed to process pasted data.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Nu am putut procesa datele lipite.');
     }
   };
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="alert alert-info text-sm py-2 rounded-xl text-info-content">
-        <ClipboardPaste size={16} />
-        <span>Paste columns directly from Excel in this order: <strong>Name, Phone, [Role (Optional)]</strong></span>
-      </div>
-      
-      <textarea
-        className="textarea textarea-bordered w-full h-40 bg-base-200 focus:bg-base-100 font-mono text-sm leading-relaxed whitespace-pre overflow-auto"
-        placeholder="John Doe&#9;0745123456&#9;SECRETARIAT&#10;Jane Smith&#9;0755123456&#9;SEF-CABINET"
-        value={rawData}
-        onChange={(e) => setRawData(e.target.value)}
-      ></textarea>
+	return (
+	    <div className="flex flex-col gap-4">
+		      <div className="ui-panel-sky flex items-start gap-3 rounded-xl border px-4 py-3 text-base-content">
+	        <ClipboardPaste size={16} />
+	        <span className="text-[0.94rem] leading-6">
+	          Lipește coloanele din Excel în această ordine: <strong>Nume, Telefon, Rol (opțional)</strong>.
+	        </span>
+	      </div>
+	      
+	      <textarea
+	        className="textarea textarea-bordered ui-tabular h-40 w-full overflow-auto whitespace-pre bg-base-200 font-mono text-sm leading-relaxed focus:bg-base-100"
+	        placeholder="Andrei Popescu&#9;0745123456&#9;Secretariat&#10;Maria Ionescu&#9;0755123456&#9;Sef cabinet"
+	        value={rawData}
+	        onChange={(e) => setRawData(e.target.value)}
+	      ></textarea>
 
-      {error && <div className="text-error text-sm mt-1 font-medium px-1">{error}</div>}
+	      {error && <div className="mt-1 px-1 text-sm leading-6 font-medium text-error">{error}</div>}
 
-      <button onClick={handleProcess} className="btn btn-secondary mt-2 w-full gap-2">
-        <ClipboardPaste size={18} /> Parse & Add Users
-      </button>
+	      <button onClick={handleProcess} className="btn ui-btn-tonal mt-2 w-full gap-2">
+	        <ClipboardPaste size={18} /> Adaugă utilizatorii în listă
+	      </button>
     </div>
   );
 }

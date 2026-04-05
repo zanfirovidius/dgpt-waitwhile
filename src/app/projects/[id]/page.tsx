@@ -3,6 +3,8 @@
 import { AttendanceConfig, getProjectAttendanceConfig } from '@/app/actions/attendance-config';
 import { FeedbackConfig, getProjectFeedbackConfig } from '@/app/actions/feedback-config';
 import { deleteProject, getProject, Project, updateProject } from '@/app/actions/projects';
+import { ProjectTagBadges } from '@/components/projects/ProjectTagBadges';
+import { ProjectTagPicker } from '@/components/projects/ProjectTagPicker';
 import { ProjectStatusSwitch } from '@/components/projects/ProjectStatusSwitch';
 import { getProjectStatusBadgeClass, getProjectStatusLabel, normalizeProjectStatus } from '@/lib/project-status';
 import { sendVolunteerPortalTestSms } from '@/app/actions/volunteer-portal';
@@ -295,6 +297,18 @@ export default function ProjectDetailPage() {
                     </label>
                 </div>
 
+                <div className="form-control gap-3">
+                    <label className="label"><span className="label-text font-bold">Etichete regionale</span></label>
+                    <ProjectTagPicker
+                      value={editData.projectTags}
+                      onChange={(projectTags) => setEditData({ ...editData, projectTags })}
+                      disabled={isSaving}
+                    />
+                    <label className="label">
+                      <span className="label-text-alt text-base-content/50">Poți asocia una sau mai multe regiuni proiectului pentru afișare și calendar.</span>
+                    </label>
+                </div>
+
                 <div className="divider opacity-50 text-[10px] uppercase font-bold tracking-widest">Metadate Eveniment (Formular Public)</div>
 
                 <div className="form-control">
@@ -356,7 +370,8 @@ export default function ProjectDetailPage() {
                         <span className="text-xs font-bold font-mono tracking-tight">{role}</span>
                         <button
                           type="button"
-                          className="btn btn-ghost btn-circle btn-xs hover:bg-error hover:text-white"
+                          className="btn btn-ghost btn-circle btn-sm hover:bg-error hover:text-white"
+                          aria-label={`Elimină rolul ${role}`}
                           onClick={() =>
                             setEditData({
                               ...editData,
@@ -434,10 +449,11 @@ export default function ProjectDetailPage() {
         ) : (
             <>
                 <div className="flex items-start justify-between gap-4 mb-6">
-                <div>
-                    <h2 className="text-2xl font-extrabold tracking-tight text-base-content">{project.name}</h2>
-                    <p className="text-sm text-primary font-medium mt-1 capitalize">{formattedDate}</p>
-                </div>
+	                <div>
+	                    <h2 className="text-2xl font-extrabold tracking-tight text-base-content">{project.name}</h2>
+	                    <p className="text-sm text-primary font-medium mt-1 capitalize">{formattedDate}</p>
+                      <ProjectTagBadges tags={project.projectTags} className="mt-3" size="md" />
+	                </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <div className={`badge badge-lg gap-1.5 py-3 ${getProjectStatusBadgeClass(project.projectStatus)}`}>
                     {getProjectStatusLabel(project.projectStatus)}
@@ -459,11 +475,19 @@ export default function ProjectDetailPage() {
                        <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Nume Eveniment</span>
                        <span className="font-medium">{project.eventName || '-'}</span>
                    </div>
-                   <div>
-                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Oraș / Sală</span>
-                       <span className="font-medium">{project.city || '-'}{project.city && project.venue ? ' / ' : ''}{project.venue || '-'}</span>
-                   </div>
-                </div>
+	                   <div>
+	                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Oraș / Sală</span>
+	                       <span className="font-medium">{project.city || '-'}{project.city && project.venue ? ' / ' : ''}{project.venue || '-'}</span>
+	                   </div>
+                     <div>
+                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Etichete regionale</span>
+                       {project.projectTags && project.projectTags.length > 0 ? (
+                         <ProjectTagBadges tags={project.projectTags} />
+                       ) : (
+                         <span className="font-medium">-</span>
+                       )}
+                     </div>
+	                </div>
 
                 <div className="bg-base-200/40 rounded-2xl p-6 border border-base-200 mb-6">
                   <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">

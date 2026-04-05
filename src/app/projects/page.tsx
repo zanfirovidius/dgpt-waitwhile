@@ -1,16 +1,30 @@
 'use client';
 
 import { getProjects, deleteProject, Project } from '@/app/actions/projects';
+import { NewProjectModal } from '@/components/projects/NewProjectModal';
+import { ProjectTagBadges } from '@/components/projects/ProjectTagBadges';
 import { formatProjectDateRange } from '@/lib/project-dates';
 import { getProjectStatusBadgeClass, getProjectStatusLabel } from '@/lib/project-status';
 import { ClipboardList, MapPin, Plus, Trash2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
 export default function ProjectsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const isCreateModalOpen = searchParams.get('new') === '1';
+
+  const projectsPath = useMemo(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('new');
+    const queryString = params.toString();
+
+    return queryString ? `/projects?${queryString}` : '/projects';
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +64,21 @@ export default function ProjectsPage() {
     }
   };
 
+  const openCreateModal = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('new', '1');
+    const queryString = params.toString();
+    router.push(queryString ? `/projects?${queryString}` : '/projects?new=1');
+  };
+
+  const closeCreateModal = () => {
+    router.replace(projectsPath);
+  };
+
+  const handleCreated = (projectId: string) => {
+    router.push(`/projects/${projectId}`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -57,9 +86,9 @@ export default function ProjectsPage() {
           <h2 className="text-2xl font-extrabold tracking-tight text-base-content">Proiecte</h2>
           <p className="text-sm text-base-content/60 mt-1">Gestionați proiectele dvs. Waitwhile</p>
         </div>
-        <Link href="/projects/new" className="btn btn-primary gap-2 shadow-lg shadow-primary/20">
+        <button type="button" onClick={openCreateModal} className="btn btn-primary gap-2 shadow-lg shadow-primary/20">
           <Plus size={18} /> Proiect Nou
-        </Link>
+        </button>
       </div>
 
       {isLoading && projects.length === 0 && (
@@ -77,7 +106,7 @@ export default function ProjectsPage() {
           </div>
           <h3 className="text-lg font-semibold text-base-content/60">Niciun proiect momentan</h3>
           <p className="text-sm text-base-content/40 mb-6">Creați primul proiect pentru a începe.</p>
-          <Link href="/projects/new" className="btn btn-primary btn-sm">Creează Proiect</Link>
+          <button type="button" onClick={openCreateModal} className="btn btn-primary btn-sm">Creează Proiect</button>
         </div>
       )}
 
@@ -113,6 +142,7 @@ export default function ProjectsPage() {
                             {formatProjectDateRange(project, { day: 'numeric', month: 'short', year: 'numeric' })}
                         </span>
                     </div>
+                    <ProjectTagBadges tags={project.projectTags} compact className="pt-1" />
                 </div>
 
                 <div className="card-actions pt-2 border-t border-base-200 mt-auto items-center justify-between">
@@ -133,6 +163,12 @@ export default function ProjectsPage() {
           ))}
         </div>
       )}
+
+      <NewProjectModal
+        isOpen={isCreateModalOpen}
+        onClose={closeCreateModal}
+        onCreated={handleCreated}
+      />
     </div>
   );
 }

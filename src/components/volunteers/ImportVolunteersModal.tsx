@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { createVolunteer } from '@/app/actions/volunteers';
 import { getProject } from '@/app/actions/projects';
-import * as XLSX from 'xlsx';
 import { X, Upload, UploadCloud, Check, AlertCircle, Trash2, Download, FileSpreadsheet } from 'lucide-react';
 
 interface ImportVolunteersModalProps {
@@ -257,7 +256,7 @@ export function ImportVolunteersModal({ isOpen, onClose, onSuccess, projectId, c
     };
   }, [isOpen, projectId]);
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
     const categoriesForImport = availableCategories.length > 0 ? availableCategories : ['VOLUNTAR'];
     const sampleRows: string[][] = [
       [...IMPORT_HEADERS],
@@ -266,6 +265,7 @@ export function ImportVolunteersModal({ isOpen, onClose, onSuccess, projectId, c
       ['', '', '', ''],
     ];
 
+    const XLSX = await import('xlsx');
     const workbook = XLSX.utils.book_new();
     const volunteersSheet = XLSX.utils.aoa_to_sheet(sampleRows);
     volunteersSheet['!cols'] = [
@@ -318,6 +318,7 @@ export function ImportVolunteersModal({ isOpen, onClose, onSuccess, projectId, c
     setParseError('');
 
     try {
+      const XLSX = await import('xlsx');
       const data = new Uint8Array(await file.arrayBuffer());
       const workbook = XLSX.read(data, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
@@ -403,7 +404,7 @@ export function ImportVolunteersModal({ isOpen, onClose, onSuccess, projectId, c
                     <p className="text-xs text-base-content/50">Lipiți date din Excel (Nume complet, Telefon, Email, Categorie)</p>
                 </div>
             </div>
-            <button onClick={onClose} className="btn btn-ghost btn-sm btn-circle">
+            <button onClick={onClose} className="btn btn-ghost btn-sm btn-circle" type="button" aria-label="Închide importul de voluntari">
               <X size={20} />
             </button>
           </div>
@@ -572,7 +573,12 @@ export function ImportVolunteersModal({ isOpen, onClose, onSuccess, projectId, c
                             </div>
                         </td>
                         <td className="text-right py-3 pr-4">
-                            <button onClick={() => removeRow(idx)} className="btn btn-ghost btn-xs btn-circle text-base-content/30 hover:text-error">
+                            <button
+                              onClick={() => removeRow(idx)}
+                              className="btn btn-ghost btn-sm btn-circle text-base-content/30 hover:text-error"
+                              type="button"
+                              aria-label={`Elimină rândul ${row.lastName} ${row.firstName}`.trim()}
+                            >
                                 <Trash2 size={12} />
                             </button>
                         </td>

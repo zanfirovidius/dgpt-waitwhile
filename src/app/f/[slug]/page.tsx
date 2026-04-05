@@ -2,24 +2,22 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { createAdminClient } from '@/lib/appwrite-server';
-import { Query } from 'node-appwrite';
-import { submitFeedback, FeedbackSubmission } from '@/app/actions/submissions';
+import { submitFeedback } from '@/app/actions/submissions';
 import { 
   CheckCircle2, AlertCircle, Send, User, Mail, Phone, 
   ChevronRight, Calendar, MessageSquare, ShieldCheck, MapPin
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-// We need a way to fetch the project/config by slug PUBLICLY
-// I'll add a specific action for this.
 import { getProjectBySlug } from '@/app/actions/projects';
+
+type PublicFeedbackProject = NonNullable<Awaited<ReturnType<typeof getProjectBySlug>>['data']>;
 
 export default function PublicFeedbackFormPage() {
   const params = useParams();
   const slug = typeof params.slug === 'string' ? params.slug : params.slug?.[0];
 
-  const [project, setProject] = useState<any>(null);
+  const [project, setProject] = useState<PublicFeedbackProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -46,15 +44,15 @@ export default function PublicFeedbackFormPage() {
         const res = await getProjectBySlug(targetSlug as string);
         if (res.success && res.data) {
           if (res.data.config.publicFeedbackFormStatus !== 'active') {
-             setError('This feedback form is not currently accepting responses.');
+             setError('Acest formular nu mai primește răspunsuri în acest moment.');
           } else {
              setProject(res.data);
           }
         } else {
-          setError('We could not find the project you are looking for.');
+          setError('Nu am găsit proiectul căutat.');
         }
-      } catch (err) {
-        setError('An error occurred while loading the form.');
+      } catch {
+        setError('A apărut o eroare la încărcarea formularului.');
       }
       setLoading(false);
     }
@@ -75,7 +73,7 @@ export default function PublicFeedbackFormPage() {
       setSubmitted(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      alert(res.error || 'Failed to submit feedback. Please try again.');
+      alert(res.error || 'Nu am putut trimite feedback-ul. Încearcă din nou.');
     }
     setSubmitting(false);
   };
@@ -88,28 +86,28 @@ export default function PublicFeedbackFormPage() {
 
   if (error) return (
     <div className="min-h-screen flex items-center justify-center bg-base-200 px-4">
-      <div className="max-w-md w-full bg-base-100 p-8 rounded-3xl shadow-xl text-center space-y-4">
+      <div className="max-w-md w-full rounded-2xl border border-base-200 bg-base-100 p-8 text-center space-y-4 shadow-sm">
         <AlertCircle size={48} className="mx-auto text-error/50" />
         <h1 className="text-xl font-bold">Formular Indisponibil</h1>
         <p className="text-base-content/60">{error}</p>
-        <div className="pt-4 text-[10px] text-base-content/30 uppercase tracking-widest font-bold">Din Grija Pentru Tine</div>
+        <div className="pt-4 text-[10px] text-base-content/30 uppercase tracking-widest font-semibold">Din Grija Pentru Tine</div>
       </div>
     </div>
   );
 
   if (submitted) return (
-    <div className="min-h-screen flex items-center justify-center bg-base-200 px-4 animate-in fade-in zoom-in duration-500">
-      <div className="max-w-md w-full bg-base-100 p-8 rounded-[2.5rem] shadow-2xl text-center space-y-8 border border-base-300/50">
+    <div className="min-h-screen flex items-center justify-center bg-base-200 px-4">
+      <div className="max-w-md w-full rounded-[1.75rem] border border-base-200 bg-base-100 p-8 text-center space-y-8 shadow-sm">
         <div className="space-y-2">
-            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-primary opacity-60">Formular Feedback</div>
-            <div className="text-xs font-black uppercase tracking-widest opacity-30">Din Grija Pentru Tine</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-base-content/45">Formular feedback</div>
+            <div className="text-xs font-semibold uppercase tracking-widest opacity-25">Din Grija Pentru Tine</div>
         </div>
 
         <div className="space-y-4">
-            <div className="w-24 h-24 bg-success/10 text-success rounded-full flex items-center justify-center mx-auto shadow-inner mb-2">
-                <CheckCircle2 size={48} />
+            <div className="mx-auto mb-2 flex h-20 w-20 items-center justify-center rounded-full bg-success/10 text-success">
+                <CheckCircle2 size={40} />
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-base-content">Vă mulțumim!</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-base-content">Vă mulțumim!</h1>
             <p className="text-base font-medium text-base-content/60 leading-relaxed px-4">
                 Feedback-ul dumneavoastră a fost înregistrat cu succes.
             </p>
@@ -117,7 +115,7 @@ export default function PublicFeedbackFormPage() {
 
         <div className="pt-8 border-t border-base-200 space-y-6">
              <div className="space-y-1">
-                <p className="text-[10px] font-black uppercase tracking-widest text-base-content/40">Operator</p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-base-content/40">Operator</p>
                 <p className="text-xs font-bold text-base-content/70">{project.config.operatorName}</p>
              </div>
 
@@ -135,14 +133,14 @@ export default function PublicFeedbackFormPage() {
                         consentToBeContacted: false,
                     });
                 }}
-                className="btn btn-primary btn-block btn-lg rounded-2xl shadow-xl shadow-primary/20 gap-3"
+                className="btn btn-primary btn-block btn-lg rounded-xl shadow-sm gap-3"
              >
                 <ChevronRight size={20} className="rotate-180" />
                 Înapoi la formular
              </button>
              
              <div className="pt-2">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-base-content/20 italic">Din Grija Pentru Tine</p>
+                <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-base-content/20 italic">Din Grija Pentru Tine</p>
              </div>
         </div>
       </div>
@@ -154,17 +152,17 @@ export default function PublicFeedbackFormPage() {
       <div className="max-w-xl mx-auto space-y-6">
         
         {/* Header Card */}
-        <div className="bg-gradient-to-br from-primary to-secondary p-8 rounded-[2rem] text-primary-content shadow-xl shadow-primary/20 relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl" />
-             <div className="relative z-10 space-y-2">
-                <h1 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+        <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-6 shadow-sm sm:p-8">
+             <div className="space-y-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-base-content/45">Formular feedback</div>
+                <h1 className="text-2xl font-semibold tracking-tight leading-tight text-base-content sm:text-[2rem]">
                     {project.project.eventName || project.config.feedbackFormTitle}
                 </h1>
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-80">
+                <div className="flex items-center gap-2 text-xs font-medium text-base-content/55">
                     <MapPin size={14} /> {project.project.city ? `${project.project.city}${project.project.venue ? `, ${project.project.venue}` : ''}` : project.project.locationName}
                 </div>
                 {project.config.feedbackFormIntroText && (
-                    <p className="text-sm opacity-90 leading-relaxed pt-2 max-w-sm">
+                    <p className="max-w-lg pt-1 text-sm leading-relaxed text-base-content/70">
                         {project.config.feedbackFormIntroText}
                     </p>
                 )}
@@ -172,12 +170,12 @@ export default function PublicFeedbackFormPage() {
         </div>
 
         {/* Form Card */}
-        <div className="bg-base-100 rounded-[2rem] shadow-xl border border-base-300/50 p-6 sm:p-10">
+        <div className="rounded-[1.75rem] border border-base-200 bg-base-100 p-6 shadow-sm sm:p-8">
           <form onSubmit={handleSubmit} className="space-y-8">
             
             {/* Participation Section */}
             <div className="space-y-4">
-                <h3 className="text-sm font-black uppercase tracking-widest text-base-content/30 flex items-center gap-2">
+                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/40">
                     <Calendar size={16} /> Detalii Participare
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -206,7 +204,7 @@ export default function PublicFeedbackFormPage() {
 
             {/* Feedback Content */}
             <div className="space-y-4">
-                <h3 className="text-sm font-black uppercase tracking-widest text-base-content/30 flex items-center gap-2">
+                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/40">
                     <MessageSquare size={16} /> Feedback-ul tău
                 </h3>
                 <div className="form-control">
@@ -217,7 +215,11 @@ export default function PublicFeedbackFormPage() {
                               key={cat}
                               type="button"
                               onClick={() => setFormData({ ...formData, category: cat })}
-                              className={`btn btn-xs rounded-full px-4 capitalize ${formData.category === cat ? 'btn-primary' : 'btn-ghost bg-base-200'}`}
+                              className={`btn btn-sm rounded-xl px-4 capitalize font-medium ${
+                                formData.category === cat
+                                  ? 'btn-ghost border border-primary/20 bg-primary/10 text-primary hover:bg-primary/15'
+                                  : 'btn-ghost border border-base-200 bg-base-200/50 text-base-content/70 hover:bg-base-200'
+                              }`}
                             >
                                 {cat}
                             </button>
@@ -239,10 +241,10 @@ export default function PublicFeedbackFormPage() {
             {/* Optional Contact */}
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-black uppercase tracking-widest text-base-content/30 flex items-center gap-2">
+                    <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/40">
                         <User size={16} /> Opțiuni Contact (Opțional)
                     </h3>
-                    <span className="text-[10px] font-bold text-base-content/40 uppercase">Sigur și Confidențial</span>
+                    <span className="text-[10px] font-medium text-base-content/40 uppercase">Sigur și confidențial</span>
                 </div>
                 <div className="grid grid-cols-1 gap-4">
                     <div className="form-control">
@@ -282,7 +284,7 @@ export default function PublicFeedbackFormPage() {
                 </div>
                 
                 {(formData.fullName || formData.email || formData.phone) && (
-                    <div className="form-control p-4 bg-primary/5 rounded-2xl border border-primary/10 animate-in slide-in-from-top-2 overflow-hidden w-full">
+                    <div className="form-control w-full overflow-hidden rounded-xl border border-base-200 bg-base-200/40 p-4">
                         <label className="flex cursor-pointer justify-start gap-4 items-start p-0 w-full group">
                             <input 
                                 type="checkbox" 
@@ -301,7 +303,7 @@ export default function PublicFeedbackFormPage() {
 
             {/* Privacy Section */}
             <div className="bg-base-200 p-6 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-base-content/40">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-base-content/40">
                     <ShieldCheck size={16} /> Confidențialitatea datelor (GDPR)
                 </div>
                 <div className="text-[10px] text-base-content/60 max-h-32 overflow-y-auto pr-2 leading-relaxed prose-markdown">
@@ -316,7 +318,7 @@ export default function PublicFeedbackFormPage() {
             <button 
               type="submit" 
               disabled={submitting}
-              className="btn btn-primary btn-block h-14 rounded-2xl text-lg gap-2 shadow-xl shadow-primary/20"
+              className="btn btn-primary btn-block h-14 rounded-xl text-base gap-2 shadow-sm"
             >
                 {submitting ? <span className="loading loading-spinner"></span> : <Send size={20} />}
                 Trimite Feedback
@@ -324,8 +326,8 @@ export default function PublicFeedbackFormPage() {
           </form>
         </div>
 
-        <div className="text-center pb-8 opacity-20 hover:opacity-100 transition-opacity">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-base-content">Din Grija Pentru Tine</p>
+        <div className="pb-8 text-center opacity-25">
+            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-base-content">Din Grija Pentru Tine</p>
         </div>
       </div>
     </div>

@@ -1,12 +1,150 @@
 'use server';
 
+type WaitwhileObject = Record<string, unknown>;
+type WaitwhileErrorPayload = WaitwhileObject & {
+  message?: string;
+  errorCode?: string;
+};
+
+type WaitwhileLocationRecord = {
+  id: string;
+  name: string;
+};
+
+type WaitwhileUserRecord = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  roles?: string[];
+  created: number;
+};
+
+type WaitwhileBookingRecord = {
+  isBlock?: boolean;
+  type?: string;
+  resourceIds?: string[];
+};
+
+type WaitwhileAvailabilityVisit = {
+  date?: string;
+  bookings?: WaitwhileBookingRecord[];
+  numAvailableSpotsByResourceId?: Record<string, number>;
+  numSpotsByResourceId?: Record<string, number>;
+};
+
+type WaitwhileResourceRecord = {
+  id: string;
+  name: string;
+  isCategory?: boolean;
+  locationId?: string;
+  categoryId?: string;
+  children?: WaitwhileResourceRecord[];
+};
+
+type WaitwhileLocationDetails = {
+  name?: string;
+  hoursByDate?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+class WaitwhileRequestError extends Error {
+  payload?: WaitwhileErrorPayload | string;
+
+  constructor(message: string, payload?: WaitwhileErrorPayload | string) {
+    super(message);
+    this.name = 'WaitwhileRequestError';
+    this.payload = payload;
+  }
+}
 
 const WAITWHILE_URL = 'https://api.waitwhile.com/v2';
+
+function isRecord(value: unknown): value is WaitwhileObject {
+  return typeof value === 'object' && value !== null;
+}
+
+function getListResponse<T>(data: unknown): T[] | null {
+  if (Array.isArray(data)) {
+    return data as T[];
+  }
+
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  if (Array.isArray(data.results)) {
+    return data.results as T[];
+  }
+
+  if (Array.isArray(data.data)) {
+    return data.data as T[];
+  }
+
+  return null;
+}
+
+function getWaitwhileErrorPayload(error: unknown): WaitwhileErrorPayload | string | undefined {
+  if (error instanceof WaitwhileRequestError) {
+    return error.payload;
+  }
+
+  if (!isRecord(error)) {
+    return undefined;
+  }
+
+  if (isRecord(error.response) && 'data' in error.response) {
+    const responseData = error.response.data;
+    if (typeof responseData === 'string') {
+      return responseData;
+    }
+    if (isRecord(responseData)) {
+      return responseData as WaitwhileErrorPayload;
+    }
+  }
+
+  if ('data' in error) {
+    const data = error.data;
+    if (typeof data === 'string') {
+      return data;
+    }
+    if (isRecord(data)) {
+      return data as WaitwhileErrorPayload;
+    }
+  }
+
+  return undefined;
+}
+
+function getWaitwhileErrorMessage(error: unknown, fallback: string): string {
+  const payload = getWaitwhileErrorPayload(error);
+
+  if (typeof payload === 'string' && payload.trim()) {
+    return payload;
+  }
+
+  if (payload && typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+function getWaitwhileErrorCode(error: unknown): string | undefined {
+  const payload = getWaitwhileErrorPayload(error);
+  return payload && typeof payload !== 'string' && typeof payload.errorCode === 'string'
+    ? payload.errorCode
+    : undefined;
+}
 
 /**
  * Universal native fetch to replace the '@api/waitwhile' SDK
  */
-async function waitwhileFetch(endpoint: string, method: string = 'GET', body?: any) {
+async function waitwhileFetch<T = unknown, B = unknown>(endpoint: string, method: string = 'GET', body?: B): Promise<{ data: T | null }> {
   const API_KEY = process.env.WAITWHILE_API_KEY;
   if (!API_KEY) throw new Error('API Key missing');
 
@@ -24,9 +162,21 @@ async function waitwhileFetch(endpoint: string, method: string = 'GET', body?: a
   const res = await fetch(url, options);
   if (!res.ok) {
     const errorText = await res.text();
-    let errorObj;
-    try { errorObj = JSON.parse(errorText); } catch(e) { errorObj = errorText; }
-    throw { response: { data: errorObj } };
+    let errorPayload: WaitwhileErrorPayload | string = errorText;
+
+    try {
+      const parsed = JSON.parse(errorText);
+      errorPayload = isRecord(parsed) ? (parsed as WaitwhileErrorPayload) : errorText;
+    } catch {
+      errorPayload = errorText;
+    }
+
+    const message =
+      typeof errorPayload === 'string'
+        ? errorPayload
+        : errorPayload.message || `Waitwhile request failed (${res.status})`;
+
+    throw new WaitwhileRequestError(message, errorPayload);
   }
   
   if (res.status === 204) return { data: null };
@@ -62,24 +212,21 @@ export async function getLocations(): Promise<{ success: boolean; data?: Locatio
 
     // Fetch locations with a limit of 20
     const response = await waitwhileFetch('/locations?limit=20');
-    const data = response.data;
-
-    // Use the array directly as provided by the SDK or fallback depending on SDK structure
-    const locationData = Array.isArray(data) ? data : (data.results || data.data || []);
+    const locationData = getListResponse<WaitwhileLocationRecord>(response.data);
     
     if (!Array.isArray(locationData)) {
-      console.error('[Waitwhile] Unexpected response format:', data);
+      console.error('[Waitwhile] Unexpected response format:', response.data);
       return { success: false, error: 'Unexpected response format from Waitwhile' };
     }
     
-    const mappedLocations = locationData.map((loc: any) => ({
+    const mappedLocations = locationData.map((loc) => ({
       id: loc.id,
       name: loc.name,
     }));
     
     return { success: true, data: mappedLocations };
-  } catch (error: any) {
-    console.error('[Waitwhile] System error in getLocations:', error.message);
+  } catch (error: unknown) {
+    console.error('[Waitwhile] System error in getLocations:', getWaitwhileErrorMessage(error, 'Failed to fetch locations from Waitwhile'));
     return { success: false, error: 'Failed to fetch locations from Waitwhile' };
   }
 }
@@ -88,7 +235,7 @@ export async function getLocations(): Promise<{ success: boolean; data?: Locatio
  * Creates a new user in Waitwhile.
  * Returns { success: true, ... } if successful, or { success: false, error: ... } if failed.
  */
-export async function createUser(payload: UserPayload): Promise<{ success: boolean; data?: any; error?: string }> {
+export async function createUser(payload: UserPayload): Promise<{ success: boolean; data?: unknown; error?: string }> {
   try {
     const API_KEY = process.env.WAITWHILE_API_KEY;
     if (!API_KEY) {
@@ -99,18 +246,18 @@ export async function createUser(payload: UserPayload): Promise<{ success: boole
     const response = await waitwhileFetch('/users', 'POST', payload);
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    const errData = error.data || error.response?.data;
-    console.error(`[Waitwhile] System error in createUser for ${payload.name}:`, errData || error.message);
+  } catch (error: unknown) {
+    const errorPayload = getWaitwhileErrorPayload(error);
+    console.error(`[Waitwhile] System error in createUser for ${payload.name}:`, errorPayload || getWaitwhileErrorMessage(error, 'Unknown error'));
     
     // Check if error is because user already exists
-    if (errData?.errorCode === 'user_email_exists') {
+    if (getWaitwhileErrorCode(error) === 'user_email_exists') {
       return { success: false, error: 'user_email_exists' };
     }
     
     return { 
       success: false, 
-      error: errData?.message || error.message 
+      error: getWaitwhileErrorMessage(error, 'Nu am putut crea utilizatorul în Waitwhile'),
     };
   }
 }
@@ -132,16 +279,14 @@ export async function getAllUsers(limit: number = 100): Promise<{ success: boole
     }
     
     const response = await waitwhileFetch(`/users?limit=${limit}`);
-    const data = response.data;
-
-    const results = Array.isArray(data) ? data : (data.results || data.data || []);
+    const results = getListResponse<WaitwhileUserRecord>(response.data);
     
     if (!Array.isArray(results)) {
-      console.error('[Waitwhile] Unexpected GET /users format:', data);
+      console.error('[Waitwhile] Unexpected GET /users format:', response.data);
       return { success: false, error: 'Unexpected response' };
     }
 
-    const mappedUsers = results.map((u: any) => ({
+    const mappedUsers = results.map((u) => ({
       id: u.id,
       name: u.name,
       phone: u.phone || '',
@@ -151,8 +296,8 @@ export async function getAllUsers(limit: number = 100): Promise<{ success: boole
     }));
 
     return { success: true, data: mappedUsers };
-  } catch (error: any) {
-    console.error('[Waitwhile] Error fetching users:', error.message);
+  } catch (error: unknown) {
+    console.error('[Waitwhile] Error fetching users:', getWaitwhileErrorMessage(error, 'Failed to fetch users'));
     return { success: false, error: 'Failed to fetch users' };
   }
 }
@@ -168,9 +313,10 @@ export async function deleteUser(userId: string): Promise<{ success: boolean; er
     await waitwhileFetch(`/users/${userId}?fb=true`, 'DELETE');
 
     return { success: true };
-  } catch (error: any) {
-    console.error(`[Waitwhile] Error deleting user ${userId}:`, error.message);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const errorMessage = getWaitwhileErrorMessage(error, 'Nu am putut șterge utilizatorul din Waitwhile');
+    console.error(`[Waitwhile] Error deleting user ${userId}:`, errorMessage);
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -207,7 +353,7 @@ export async function createSandboxBookings(locationId: string, dateStr: string,
     }
     
     // Starting at 10:00 AM UTC
-    let startTime = new Date(`${dateStr}T10:00:00Z`);
+    const startTime = new Date(`${dateStr}T10:00:00Z`);
 
     for (let i = 0; i < numberOfBookings; i++) {
         const year = startTime.getUTCFullYear();
@@ -258,10 +404,14 @@ export async function createSandboxBookings(locationId: string, dateStr: string,
     }
 
     return { success: true, generated: numberOfBookings };
-  } catch (error: any) {
-    const errData = error.response ? error.response.data : error.message;
+  } catch (error: unknown) {
+    const errData = getWaitwhileErrorPayload(error) || getWaitwhileErrorMessage(error, 'Failed to generate bookings');
     console.error('[Waitwhile Sandbox Error]:', errData);
-    return { success: false, generated: 0, error: errData ? JSON.stringify(errData) : "Failed to generate bookings" };
+    return {
+      success: false,
+      generated: 0,
+      error: typeof errData === 'string' ? errData : JSON.stringify(errData),
+    };
   }
 }
 
@@ -269,7 +419,7 @@ export async function createSandboxBookings(locationId: string, dateStr: string,
 // Location Details
 // -------------------------------------------------------------------------------- //
 
-export async function getLocationDetails(locationId: string): Promise<{ success: boolean; data?: any; error?: string }> {
+export async function getLocationDetails(locationId: string): Promise<{ success: boolean; data?: WaitwhileLocationDetails | null; error?: string }> {
   try {
     const API_KEY = process.env.WAITWHILE_API_KEY;
     if (!API_KEY) return { success: false, error: 'API Key missing' };
@@ -285,10 +435,10 @@ export async function getLocationDetails(locationId: string): Promise<{ success:
       return { success: false, error: err };
     }
 
-    const data = await res.json();
+    const data = (await res.json()) as WaitwhileLocationDetails;
     return { success: true, data };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    return { success: false, error: getWaitwhileErrorMessage(error, 'Nu am putut prelua detaliile locației') };
   }
 }
 
@@ -324,12 +474,14 @@ export async function getOccupancy(locationId: string, fromDateStr: string, toDa
     if (!API_KEY) return { success: false, error: 'Server configuration error' };
     // 1. Fetch Resources to get mapping
     const resResponse = await waitwhileFetch(`/resources?locationId=${locationId}&limit=100`);
-    const resData: any = resResponse.data;
-    const resourcesList: any[] = Array.isArray(resData) ? resData : (resData?.results || resData?.data || []);
+    const resourcesList = getListResponse<WaitwhileResourceRecord>(resResponse.data);
+    if (!resourcesList) {
+      return { success: false, error: 'Failed to acquire resources from Waitwhile API.' };
+    }
     
     // Mapping: resourceId -> starting skeleton
     const resources: Record<string, OccupancyData> = {};
-    resourcesList.forEach((r: any) => {
+    resourcesList.forEach((r) => {
       // API locations often group all cabinets into a 'Category' resource.
       // This causes duplicate / 200% tracking. Skip them!
       if (r.isCategory) return;
@@ -366,23 +518,19 @@ export async function getOccupancy(locationId: string, fromDateStr: string, toDa
 
     const visitsResp = await waitwhileFetch(`/visits/availability?${q.toString()}`);
 
-    let visits: any[] = [];
-    if (Array.isArray(visitsResp.data)) {
-      visits = visitsResp.data;
-    } else if (visitsResp.data && Array.isArray((visitsResp.data as any).results)) {
-      visits = (visitsResp.data as any).results;
-    } else {
+    const visits = getListResponse<WaitwhileAvailabilityVisit>(visitsResp.data);
+    if (!visits) {
       return { success: false, error: 'Failed to acquire availability slots from Waitwhile API.' };
     }
 
     // 3. Aggregate
-    visits.forEach((visit: any) => {
+    visits.forEach((visit) => {
       const bookings = Array.isArray(visit.bookings) ? visit.bookings : [];
       
       // Filter slots that are BLOCKS to ignore them from capacity fully
-      const blockBookings = bookings.filter((b: any) => b?.isBlock === true || b?.type === 'BLOCK');
+      const blockBookings = bookings.filter((booking) => booking.isBlock === true || booking.type === 'BLOCK');
       const blockedResourceIds = new Set(
-        blockBookings.flatMap((b: any) => Array.isArray(b?.resourceIds) ? b.resourceIds : [])
+        blockBookings.flatMap((booking) => (Array.isArray(booking.resourceIds) ? booking.resourceIds : []))
       );
 
       const availByRes = visit.numAvailableSpotsByResourceId || {};
@@ -446,10 +594,13 @@ export async function getOccupancy(locationId: string, fromDateStr: string, toDa
         occupancyPercent: globalPercent 
       } 
     };
-  } catch (error: any) {
-    const errData = error.response ? error.response.data : error.message;
+  } catch (error: unknown) {
+    const errData = getWaitwhileErrorPayload(error) || getWaitwhileErrorMessage(error, 'Failed to calculate occupancy');
     console.error('[Occupancy Error Details]:', errData);
-    return { success: false, error: error.response?.data?.message || errData?.message || 'Failed to calculate occupancy. See server logs.' };
+    return {
+      success: false,
+      error: getWaitwhileErrorMessage(error, 'Failed to calculate occupancy. See server logs.'),
+    };
   }
 }
 
@@ -483,20 +634,21 @@ export async function getResourceCategories(locationId: string): Promise<{ succe
     if (!API_KEY) return { success: false, error: 'API Key missing' };
 
     const response = await waitwhileFetch(`/resources/tree?locationId=${locationId}`);
-    const data = response.data;
-
-    const results: any[] = Array.isArray(data) ? data : (data?.results || data?.data || []);
+    const results = getListResponse<WaitwhileResourceRecord>(response.data);
+    if (!results) {
+      return { success: false, error: 'Failed to fetch resource categories' };
+    }
 
     // Filter only categories (top-level category items)
     const categories: ResourceCategory[] = results
-      .filter((r: any) => r.isCategory === true)
-      .map((r: any) => ({
+      .filter((r) => r.isCategory === true)
+      .map((r) => ({
         id: r.id,
         name: r.name,
         isCategory: true,
         locationId: r.locationId,
         children: Array.isArray(r.children)
-          ? r.children.map((child: any) => ({
+          ? r.children.map((child) => ({
               id: child.id,
               name: child.name,
               isCategory: child.isCategory || false,
@@ -507,8 +659,8 @@ export async function getResourceCategories(locationId: string): Promise<{ succe
       }));
 
     return { success: true, data: categories };
-  } catch (error: any) {
-    console.error('[Waitwhile] Error fetching resource categories:', error.message);
+  } catch (error: unknown) {
+    console.error('[Waitwhile] Error fetching resource categories:', getWaitwhileErrorMessage(error, 'Failed to fetch resource categories'));
     return { success: false, error: 'Failed to fetch resource categories' };
   }
 }
@@ -534,7 +686,7 @@ export async function createResourceCategory(
     };
 
     const response = await waitwhileFetch('/resources', 'POST', payload);
-    const created = response.data;
+    const created = response.data as WaitwhileResourceRecord;
 
     return {
       success: true,
@@ -546,10 +698,10 @@ export async function createResourceCategory(
         children: [],
       },
     };
-  } catch (error: any) {
-    const errData = error.response?.data || error.data;
-    console.error('[Waitwhile] Error creating resource category:', errData || error.message);
-    return { success: false, error: errData?.message || error.message || 'Failed to create resource category' };
+  } catch (error: unknown) {
+    const errData = getWaitwhileErrorPayload(error) || getWaitwhileErrorMessage(error, 'Failed to create resource category');
+    console.error('[Waitwhile] Error creating resource category:', errData);
+    return { success: false, error: getWaitwhileErrorMessage(error, 'Failed to create resource category') };
   }
 }
 
@@ -563,11 +715,12 @@ export async function getResourcesByLocation(locationId: string): Promise<{ succ
     if (!API_KEY) return { success: false, error: 'API Key missing' };
 
     const response = await waitwhileFetch(`/resources?locationId=${locationId}&limit=100`);
-    const data = response.data;
+    const results = getListResponse<WaitwhileResourceRecord>(response.data);
+    if (!results) {
+      return { success: false, error: 'Failed to fetch resources' };
+    }
 
-    const results: any[] = Array.isArray(data) ? data : (data?.results || data?.data || []);
-
-    const resources: ResourceItem[] = results.map((r: any) => ({
+    const resources: ResourceItem[] = results.map((r) => ({
       id: r.id,
       name: r.name,
       isCategory: r.isCategory || false,
@@ -576,8 +729,8 @@ export async function getResourcesByLocation(locationId: string): Promise<{ succ
     }));
 
     return { success: true, data: resources };
-  } catch (error: any) {
-    console.error('[Waitwhile] Error fetching resources:', error.message);
+  } catch (error: unknown) {
+    console.error('[Waitwhile] Error fetching resources:', getWaitwhileErrorMessage(error, 'Failed to fetch resources'));
     return { success: false, error: 'Failed to fetch resources' };
   }
 }
@@ -601,12 +754,12 @@ export interface CreateResourcePayload {
 
 export async function createResource(
   payload: CreateResourcePayload
-): Promise<{ success: boolean; data?: any; error?: string }> {
+): Promise<{ success: boolean; data?: WaitwhileResourceRecord | null; error?: string }> {
   try {
     const API_KEY = process.env.WAITWHILE_API_KEY;
     if (!API_KEY) return { success: false, error: 'API Key missing' };
 
-    const body: any = {
+    const body: Record<string, unknown> = {
       name: payload.name,
       locationIds: [payload.locationId],
       parentId: payload.categoryId,
@@ -620,10 +773,9 @@ export async function createResource(
     const response = await waitwhileFetch('/resources', 'POST', body);
 
     return { success: true, data: response.data };
-  } catch (error: any) {
-    const errData = error.response?.data || error.data;
-    console.error('[Waitwhile] Error creating resource:', errData || error.message);
-    return { success: false, error: errData?.message || error.message || 'Failed to create resource' };
+  } catch (error: unknown) {
+    const errData = getWaitwhileErrorPayload(error) || getWaitwhileErrorMessage(error, 'Failed to create resource');
+    console.error('[Waitwhile] Error creating resource:', errData);
+    return { success: false, error: getWaitwhileErrorMessage(error, 'Failed to create resource') };
   }
 }
-

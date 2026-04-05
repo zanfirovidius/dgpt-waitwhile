@@ -6,6 +6,37 @@ import { ID, Query } from 'node-appwrite';
 const DATABASE_ID = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
 const SUBMISSIONS_COLLECTION_ID = process.env.NEXT_PUBLIC_APPWRITE_FEEDBACK_SUBMISSIONS_COLLECTION_ID!;
 
+type AppwriteLikeError = {
+  message?: string;
+};
+
+type ProjectSnapshotDocument = {
+  name?: string;
+  city?: string;
+  locationName?: string;
+};
+
+type ConfigSnapshotDocument = {
+  projectSlug?: string;
+  publicFeedbackFormStatus?: string;
+  operatorName?: string;
+};
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as AppwriteLikeError).message;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+  }
+
+  return fallback;
+}
+
 export interface FeedbackSubmission {
   $id?: string;
   projectId: string;
@@ -34,11 +65,24 @@ export async function submitFeedback(data: Partial<FeedbackSubmission>): Promise
     const { databases } = await createAdminClient(); // Unauthenticated public submission
 
     // 1. Resolve Project and Config to ensure it's active
-    if (!data.projectId) throw new Error('Missing project ID');
+    const projectId = data.projectId;
+    if (!projectId) throw new Error('Missing project ID');
     
     // Fetch directly via admin client to avoid session restrictions
-    const projectDoc = await databases.getDocument(DATABASE_ID, process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!, data.projectId);
-    const configDoc = await databases.getDocument(DATABASE_ID, process.env.NEXT_PUBLIC_APPWRITE_PROJECT_FEEDBACK_CONFIG_COLLECTION_ID!, data.projectId);
+    const projectDoc = JSON.parse(
+      JSON.stringify(
+        await databases.getDocument(DATABASE_ID, process.env.NEXT_PUBLIC_APPWRITE_PROJECTS_COLLECTION_ID!, projectId),
+      ),
+    ) as ProjectSnapshotDocument;
+    const configDoc = JSON.parse(
+      JSON.stringify(
+        await databases.getDocument(
+          DATABASE_ID,
+          process.env.NEXT_PUBLIC_APPWRITE_PROJECT_FEEDBACK_CONFIG_COLLECTION_ID!,
+          projectId,
+        ),
+      ),
+    ) as ConfigSnapshotDocument;
     
     if (!projectDoc) throw new Error('Project not found');
     if (!configDoc) throw new Error('Feedback config not found');
@@ -49,9 +93,9 @@ export async function submitFeedback(data: Partial<FeedbackSubmission>): Promise
 
     // 2. Snapshots for historical integrity
     const snapshot = {
-        projectSlugSnapshot: configDoc.projectSlug,
-        eventNameSnapshot: projectDoc.name,
-        citySnapshot: (projectDoc as any).city || '',
+        projectSlugSnapshot: configDoc.projectSlug || '',
+        eventNameSnapshot: projectDoc.name || '',
+        citySnapshot: projectDoc.city || '',
         venueSnapshot: projectDoc.locationName || '',
         operatorNameSnapshot: configDoc.operatorName || '',
     };
@@ -69,7 +113,15 @@ export async function submitFeedback(data: Partial<FeedbackSubmission>): Promise
 
     // 5. Save to Appwrite
     const submission: FeedbackSubmission = {
-        ...data as any,
+        projectId,
+        participationDate: data.participationDate,
+        category: data.category,
+        message: data.message,
+        subLocation: data.subLocation,
+        fullName: data.fullName,
+        email: data.email,
+        phone: data.phone,
+        consentToBeContacted: Boolean(data.consentToBeContacted),
         ...snapshot,
         isAnonymous,
         status: 'new',
@@ -78,9 +130,9 @@ export async function submitFeedback(data: Partial<FeedbackSubmission>): Promise
     await databases.createDocument(DATABASE_ID, SUBMISSIONS_COLLECTION_ID, ID.unique(), submission);
     
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Submissions] submit error:', err);
-    return { success: false, error: err.message || 'Failed to submit feedback' };
+    return { success: false, error: getErrorMessage(err, 'Nu am putut trimite feedback-ul') };
   }
 }
 

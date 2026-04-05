@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Waitwhile User Generator | DGPT",
-  description: "Bulk create users in Waitwhile from Excel or manual input.",
+  title: "Platformă Operațională DGPT",
+  description: "Administrare proiecte, cabinete, voluntari și fluxuri operaționale DGPT.",
 };
 
 export default function RootLayout({
@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-theme="dark">
+    <html lang="ro" data-theme="light">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-base-300 text-base-content selection:bg-primary selection:text-primary-content`}
       >

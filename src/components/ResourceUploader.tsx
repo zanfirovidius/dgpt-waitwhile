@@ -1,8 +1,7 @@
 'use client';
 
 import { AlertCircle, FileSpreadsheet, UploadCloud } from 'lucide-react';
-import { useState } from 'react';
-import * as XLSX from 'xlsx';
+import { useRef, useState } from 'react';
 
 // ── Types ────────────────────────────────────────────────────────
 interface HoursPeriod { from: string; to: string; }
@@ -32,6 +31,11 @@ interface ResourceUploaderProps {
   currentCount: number;
 }
 
+type WorksheetRow = Array<string | number | boolean | Date | null | undefined>;
+
+const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls'];
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+
 function uid(): string {
   return Math.random().toString(36).substring(2, 9);
 }
@@ -49,30 +53,60 @@ function parseExcelHeader(header: string): { dateKey: string; displayDate: strin
 export default function ResourceUploader({ onResourcesParsed, selectedLocation, selectedCategoryId, resourceColors, currentCount }: ResourceUploaderProps) {
   const [isDragActive, setIsDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const formatUnknownError = (err: unknown) => (err instanceof Error ? err.message : 'A apărut o eroare la procesarea fișierului.');
 
   const handleFileUpload = (file: File) => {
     setError(null);
     if (!selectedLocation) {
-      setError("Please select a Location from the configuration first.");
+      setError('Selectează mai întâi locația din zona de configurare.');
       return;
     }
     if (!selectedCategoryId) {
-      setError("Please select a Category from the configuration first.");
+      setError('Selectează mai întâi categoria din zona de configurare.');
+      return;
+    }
+    if (!ACCEPTED_EXTENSIONS.some((extension) => file.name.toLowerCase().endsWith(extension))) {
+      setError('Fișierul trebuie să fie în format Excel (.xlsx sau .xls).');
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setError('Fișierul este prea mare. Limita curentă este de 5 MB.');
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onerror = () => {
+      setError('Nu am putut citi fișierul selectat. Încearcă din nou cu un export Excel valid.');
+    };
+    reader.onabort = () => {
+      setError('Încărcarea fișierului a fost întreruptă.');
+    };
+    reader.onload = async (e) => {
       try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const XLSX = await import('xlsx');
+        const result = e.target?.result;
+        if (!(result instanceof ArrayBuffer)) {
+          throw new Error('Fișierul nu a putut fi decodat corect.');
+        }
+
+        const data = new Uint8Array(result);
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
+        if (!sheetName) {
+          throw new Error('Fișierul Excel nu conține niciun sheet utilizabil.');
+        }
+
         const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) {
+          throw new Error('Fișierul Excel nu conține date care pot fi citite.');
+        }
         
-        const rows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
+        const rows = XLSX.utils.sheet_to_json<WorksheetRow>(worksheet, { header: 1, defval: '' });
         
         if (rows.length < 2) {
-          throw new Error('Excel file must have at least 2 rows.');
+          throw new Error('Fișierul Excel trebuie să conțină cel puțin două rânduri.');
         }
 
         const headers = rows[0];
@@ -115,13 +149,13 @@ export default function ResourceUploader({ onResourcesParsed, selectedLocation, 
         }
 
         if (newDrafts.length === 0) {
-          throw new Error("No valid resources found in the file.");
+          throw new Error('Nu am găsit resurse valide în fișierul importat.');
         }
 
         onResourcesParsed(newDrafts);
 
-      } catch (err: any) {
-        setError(err.message || 'Error parsing Excel file.');
+      } catch (err: unknown) {
+        setError(formatUnknownError(err));
       }
     };
     reader.readAsArrayBuffer(file);
@@ -151,17 +185,27 @@ export default function ResourceUploader({ onResourcesParsed, selectedLocation, 
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         className={`border-2 border-dashed rounded-2xl p-8 text-center transition-colors cursor-pointer group hover:border-primary hover:bg-base-200/50 ${isDragActive ? 'border-primary bg-primary/10' : 'border-base-300'}`}
-        onClick={() => document.getElementById('res-file-upload')?.click()}
+        onClick={() => inputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        aria-label="Încarcă fișier Excel cu resurse"
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
       >
         <UploadCloud className={`mx-auto mb-4 transition-colors ${isDragActive ? 'text-primary' : 'text-base-content/40 group-hover:text-primary'}`} size={48} />
-        <h3 className="font-bold text-lg mb-1">Click or drag Excel file here</h3>
+        <h3 className="font-bold text-lg mb-1">Apasă sau trage aici fișierul Excel</h3>
         <p className="text-sm text-base-content/60 flex items-center justify-center gap-1 mb-2">
-          <FileSpreadsheet size={14} /> Supports .xlsx, .xls
+          <FileSpreadsheet size={14} /> Acceptă fișiere `.xlsx` și `.xls`
         </p>
         <p className="text-xs text-base-content/40">
-          Format: Column A for names, subsequent columns for date/time (e.g. 29.03.2026 (10:00 - 13:00))
+          Format: coloana A pentru nume, coloanele următoare pentru intervale (ex. 29.03.2026 (10:00 - 13:00))
         </p>
         <input 
+          ref={inputRef}
           id="res-file-upload" 
           type="file" 
           accept=".xlsx, .xls" 

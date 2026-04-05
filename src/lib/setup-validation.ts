@@ -9,7 +9,7 @@ export interface ProjectFeedbackConfig {
   feedbackRetentionDays?: number;
   feedbackFormTitle?: string;
   feedbackSuccessMessage?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export function validateProjectFeedbackSetup(config: ProjectFeedbackConfig) {
@@ -41,7 +41,7 @@ export interface ProjectAttendanceConfig {
   attendanceAccessPinHash?: string;
   instructions?: string;
   privacyNotice?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export function validateProjectAttendanceSetup(config: ProjectAttendanceConfig) {

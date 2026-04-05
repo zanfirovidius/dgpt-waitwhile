@@ -4,6 +4,7 @@
 import { ID, Query } from 'node-appwrite';
 import { createAdminClient, createSessionClient } from '../../lib/appwrite-server';
 import { normalizeProjectDates } from '@/lib/project-dates';
+import { normalizeProjectTags, type ProjectTagCode } from '@/lib/project-tags';
 import { normalizeProjectStatus, type ProjectStatus } from '@/lib/project-status';
 import { normalizeToSlug, ensureUniqueProjectSlug } from '@/lib/slug';
 import { getPlatformSettings } from './platform';
@@ -41,6 +42,7 @@ export interface Project {
   startDate: string;
   endDate: string;
   projectStatus?: ProjectStatus;
+  projectTags?: ProjectTagCode[];
   projectSlug?: string;
   publicFeedbackFormStatus?: string;
   eventName?: string;
@@ -75,12 +77,15 @@ export async function createProject(data: {
   startDate: string;
   endDate: string;
   projectStatus?: ProjectStatus;
+  projectTags?: ProjectTagCode[];
 }): Promise<{ success: boolean; projectId?: string; error?: string }> {
   if (data.endDate < data.startDate) {
     return { success: false, error: 'End date must be on or after the start date' };
   }
 
   try {
+    const projectTags = normalizeProjectTags(data.projectTags);
+
     // 1. System-level setup (requires Admin Key)
     const admin = await createAdminClient();
     await ensureProjectMetadataAttributes(admin.databases);
@@ -101,6 +106,7 @@ export async function createProject(data: {
       ...data,
       date: data.startDate,
       projectStatus: normalizeProjectStatus(data.projectStatus),
+      ...(projectTags.length > 0 ? { projectTags } : {}),
       projectSlug: uniqueSlug,
       // Metadata for setup
       eventName: data.name,
@@ -209,6 +215,7 @@ export async function getProjects(): Promise<{ success: boolean; data?: Project[
         endDate: normalized.endDate,
         date: normalized.date,
         projectStatus: normalizeProjectStatus((normalized.projectStatus as string | undefined) || undefined),
+        projectTags: normalizeProjectTags(normalized.projectTags),
         projectSlug: normalized.projectSlug,
         publicFeedbackFormStatus: normalized.publicFeedbackFormStatus,
         eventName: normalized.eventName,
@@ -250,6 +257,7 @@ export async function getProject(id: string): Promise<{ success: boolean; data?:
       endDate: normalized.endDate,
       date: normalized.date,
       projectStatus: normalizeProjectStatus((normalized.projectStatus as string | undefined) || undefined),
+      projectTags: normalizeProjectTags(normalized.projectTags),
       projectSlug: normalized.projectSlug,
       publicFeedbackFormStatus: normalized.publicFeedbackFormStatus,
       eventName: normalized.eventName,
@@ -309,6 +317,10 @@ export async function updateProject(id: string, data: Partial<Project>): Promise
 
     if (cleanData.projectStatus !== undefined) {
       cleanData.projectStatus = normalizeProjectStatus(String(cleanData.projectStatus));
+    }
+
+    if (data.projectTags !== undefined) {
+      cleanData.projectTags = normalizeProjectTags(data.projectTags);
     }
 
     if (Object.keys(cleanData).length > 0) {
@@ -384,6 +396,7 @@ export async function getProjectBySlug(
         endDate: normalized.endDate,
         date: normalized.date,
         projectStatus: normalizeProjectStatus((normalized.projectStatus as string | undefined) || undefined),
+        projectTags: normalizeProjectTags(normalized.projectTags),
         projectSlug: normalized.projectSlug,
         publicFeedbackFormStatus: normalized.publicFeedbackFormStatus,
         eventName: normalized.eventName,
@@ -416,9 +429,10 @@ async function ensureProjectMetadataAttributes(
 ) {
   const res = await databases.listAttributes(DATABASE_ID, PROJECTS_COLLECTION_ID);
   const existing = new Map(res.attributes.map((attribute) => [attribute.key, attribute]));
-  const requiredKeys = ['startDate', 'endDate', 'projectSlug', 'projectStatus', 'publicFeedbackFormStatus', 'eventName', 'city', 'venue'];
+  const requiredStringAttributes = ['startDate', 'endDate', 'projectSlug', 'projectStatus', 'publicFeedbackFormStatus', 'eventName', 'city', 'venue'];
+  const requiredStringArrayAttributes = ['projectTags'];
 
-  for (const key of requiredKeys) {
+  for (const key of requiredStringAttributes) {
     if (existing.has(key)) {
       continue;
     }
@@ -437,8 +451,24 @@ async function ensureProjectMetadataAttributes(
     await databases.createStringAttribute(DATABASE_ID, PROJECTS_COLLECTION_ID, key, size, false);
   }
 
+  for (const key of requiredStringArrayAttributes) {
+    if (existing.has(key)) {
+      continue;
+    }
+
+    await databases.createStringAttribute(
+      DATABASE_ID,
+      PROJECTS_COLLECTION_ID,
+      key,
+      16,
+      false,
+      undefined,
+      true,
+    );
+  }
+
   await Promise.all(
-    requiredKeys.map(async (key) => {
+    [...requiredStringAttributes, ...requiredStringArrayAttributes].map(async (key) => {
       if (existing.get(key)?.status === 'available') {
         return;
       }

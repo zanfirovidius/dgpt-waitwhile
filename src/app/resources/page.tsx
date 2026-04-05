@@ -26,15 +26,24 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { getResourceSwatch, RESOURCE_SWATCHES } from '@/lib/ui-tokens';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-// ── Color Palette ────────────────────────────────────────────────
-const RESOURCE_COLORS = [
-  '#4285F4', '#EA4335', '#FBBC04', '#34A853', '#FF6D01',
-  '#46BDC6', '#7B61FF', '#F538A0', '#00C9A7', '#845EC2',
-  '#D65DB1', '#FF9671', '#FFC75F', '#008F7A', '#0089BA',
-  '#C34A36', '#B0A8B9', '#4B4453', '#2C73D2', '#FF5E78',
-];
+type HoursPeriod = {
+  from: string;
+  to: string;
+};
+
+type LocationHoursByDate = {
+  isOpen?: boolean;
+  periods?: HoursPeriod[];
+};
+
+type LocationDetails = {
+  hoursByDate?: Record<string, LocationHoursByDate>;
+};
+
+type ResourceDateHours = ResourceDraft['dateHours'][number];
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatDateKey(key: string): string {
@@ -50,13 +59,13 @@ function uid(): string {
   return Math.random().toString(36).substring(2, 9);
 }
 
-function hoursSummary(dateHours: any[]): string {
-  if (dateHours.length === 0) return 'No hours';
-  const active = dateHours.filter(d => d.isOpen && d.periods.length > 0);
-  if (active.length === 0) return 'All days closed';
-  return active.map(d => {
-    const intervals = d.periods.map((p: any) => `${p.from}–${p.to}`).join(', ');
-    return `${d.displayDate}: ${intervals}`;
+function hoursSummary(dateHours: ResourceDraft['dateHours']): string {
+  if (dateHours.length === 0) return 'Fără program';
+  const active = dateHours.filter((dateHour) => dateHour.isOpen && dateHour.periods.length > 0);
+  if (active.length === 0) return 'Toate zilele sunt închise';
+  return active.map((dateHour) => {
+    const intervals = dateHour.periods.map((period) => `${period.from}–${period.to}`).join(', ');
+    return `${dateHour.displayDate}: ${intervals}`;
   }).join(' · ');
 }
 
@@ -78,7 +87,6 @@ export default function ResourcesPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [expandedResource, setExpandedResource] = useState<string | null>(null);
 
-  const [locationDates, setLocationDates] = useState<any[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll logs
@@ -86,28 +94,39 @@ export default function ResourcesPage() {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  useEffect(() => {
-    if (!selectedLocation) { setLocationDates([]); return; }
-    let mounted = true;
-    (async () => {
-      const res = await getLocationDetails(selectedLocation);
-      if (!mounted) return;
-      if (res.success && res.data?.hoursByDate) {
-        const dates = Object.entries(res.data.hoursByDate as Record<string, any>)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([key, val]) => ({
-            dateKey: key,
-            displayDate: formatDateKey(key),
-            isOpen: val.isOpen ?? true,
-            periods: Array.isArray(val.periods) ? val.periods.map((p: any) => ({ from: p.from, to: p.to })) : [],
-          }));
-        setLocationDates(dates);
-      } else {
-        setLocationDates([]);
+  const { data: locationDetails } = useQuery({
+    queryKey: ['resource-location-details', selectedLocation],
+    queryFn: async () => {
+      if (!selectedLocation) {
+        return null;
       }
-    })();
-    return () => { mounted = false; };
-  }, [selectedLocation]);
+
+      const res = await getLocationDetails(selectedLocation);
+      if (!res.success) {
+        throw new Error(res.error);
+      }
+
+      return (res.data ?? null) as LocationDetails | null;
+    },
+    enabled: !!selectedLocation,
+  });
+
+  const locationDates = useMemo<ResourceDateHours[]>(() => {
+    if (!locationDetails?.hoursByDate) {
+      return [];
+    }
+
+    return Object.entries(locationDetails.hoursByDate)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => ({
+        dateKey: key,
+        displayDate: formatDateKey(key),
+        isOpen: value.isOpen ?? true,
+        periods: Array.isArray(value.periods)
+          ? value.periods.map((period) => ({ from: period.from, to: period.to }))
+          : [],
+      }));
+  }, [locationDetails]);
 
   // ── Categories ─────────────────────────────────────────────────
   const {
@@ -142,20 +161,20 @@ export default function ResourcesPage() {
     setCatMessage(null);
     const res = await createResourceCategory(selectedLocation, newCategoryName.trim());
     if (res.success) {
-      setCatMessage({ type: 'success', text: `Category "${newCategoryName.trim()}" created!` });
+      setCatMessage({ type: 'success', text: `Categoria „${newCategoryName.trim()}” a fost creată.` });
       setNewCategoryName('');
       queryClient.invalidateQueries({ queryKey: ['resource-categories', selectedLocation] });
     } else {
-      setCatMessage({ type: 'error', text: res.error || 'Failed' });
+      setCatMessage({ type: 'error', text: res.error || 'Nu am putut crea categoria.' });
     }
     setIsCreatingCat(false);
   };
 
   // ── Resource Draft Management ──────────────────────────────────
   const makeDefaultDateHours = () =>
-    locationDates.map(d => ({
-      ...d,
-      periods: d.periods.length > 0 ? d.periods.map((p: any) => ({ ...p })) : [{ from: '09:00', to: '17:00' }],
+    locationDates.map((dateHour) => ({
+      ...dateHour,
+      periods: dateHour.periods.length > 0 ? dateHour.periods.map((period) => ({ ...period })) : [{ from: '09:00', to: '17:00' }],
     }));
 
   const handleAddManual = () => {
@@ -164,7 +183,7 @@ export default function ResourcesPage() {
       id: uid(),
       name: manualName.trim(),
       description: '',
-      color: RESOURCE_COLORS[prev.length % RESOURCE_COLORS.length],
+      color: getResourceSwatch(prev.length),
       dateHours: makeDefaultDateHours(),
     }]);
     setManualName('');
@@ -174,7 +193,7 @@ export default function ResourcesPage() {
     const names = pasteText.split('\n').map(s => s.trim()).filter(Boolean);
     const newDrafts: ResourceDraft[] = names.map((name, idx) => ({
       id: uid(), name, description: '',
-      color: RESOURCE_COLORS[(resources.length + idx) % RESOURCE_COLORS.length],
+      color: getResourceSwatch(resources.length + idx),
       dateHours: makeDefaultDateHours(),
     }));
     setResources(prev => [...prev, ...newDrafts]);
@@ -186,8 +205,8 @@ export default function ResourcesPage() {
     if (expandedResource === id) setExpandedResource(null);
   };
 
-  const updateResourceField = (id: string, field: keyof ResourceDraft, value: any) => {
-    setResources(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+  const updateResourceField = <K extends keyof ResourceDraft>(id: string, field: K, value: ResourceDraft[K]) => {
+    setResources((prev) => prev.map((resource) => (resource.id === id ? { ...resource, [field]: value } : resource)));
   };
 
   const updatePeriod = (resId: string, dateKey: string, periodIdx: number, field: 'from' | 'to', value: string) => {
@@ -225,7 +244,7 @@ export default function ResourcesPage() {
   const handleBulkCreate = async () => {
     if (!selectedLocation || !selectedCategoryId || resources.length === 0) return;
     setIsProcessing(true);
-    setLogs([`Starting creation of ${resources.length} resources...`]);
+    setLogs([`[Sistem] Pornesc sincronizarea pentru ${resources.length} resurse...`]);
     setExpandedResource(null);
 
     const updated = [...resources];
@@ -249,16 +268,16 @@ export default function ResourcesPage() {
 
       const res = await createResource(payload);
       if (res.success) {
-        updated[i] = { ...updated[i], syncStatus: 'success', syncMessage: 'Created' };
-        setLogs(prev => [...prev, `[Success] ${draft.name}`]);
+        updated[i] = { ...updated[i], syncStatus: 'success', syncMessage: 'Creată' };
+        setLogs(prev => [...prev, `[Succes] ${draft.name}`]);
       } else {
-        updated[i] = { ...updated[i], syncStatus: 'error', syncMessage: res.error || 'Failed' };
-        setLogs(prev => [...prev, `[Error] Failed ${draft.name} — ${res.error}`]);
+        updated[i] = { ...updated[i], syncStatus: 'error', syncMessage: res.error || 'Eroare la sincronizare' };
+        setLogs(prev => [...prev, `[Eroare] ${draft.name} — ${res.error}`]);
       }
       setResources([...updated]);
     }
 
-    setLogs(prev => [...prev, `[System] ✅ Pipeline completed!`]);
+    setLogs(prev => [...prev, `[Sistem] Sincronizarea s-a încheiat.`]);
     setIsProcessing(false);
     queryClient.invalidateQueries({ queryKey: ['resource-categories', selectedLocation] });
   };
@@ -274,11 +293,11 @@ export default function ResourcesPage() {
   return (
     <div className="space-y-6">
       {/* ── Top Configuration Bar (Matches Add Users format) ────── */}
-      <div className="card bg-base-100 shadow-xl border border-base-200">
+      <div className="card border border-base-200 bg-base-100 shadow-sm">
         <div className="card-body gap-6 sm:flex-row items-center">
           <div className="flex-1 w-full relative z-20">
             <h2 className="card-title text-base text-base-content/70 mb-2 flex items-center gap-2">
-              <Layers size={18} /> Configuration
+              <Layers size={18} /> Configurare
             </h2>
             <LocationSelector selectedLocation={selectedLocation} onChange={handleLocationChange} />
           </div>
@@ -288,20 +307,20 @@ export default function ResourcesPage() {
           <div className="flex-1 w-full relative z-10">
             <div className="flex items-center justify-between mb-2">
               <h2 className="card-title text-base text-base-content/70">
-                Resource Category
+                Categorie resurse
               </h2>
               {selectedLocation && (
-                <button onClick={() => refetchCats()} disabled={catFetching} className="btn btn-ghost btn-xs btn-square" title="Refresh">
+                <button onClick={() => refetchCats()} disabled={catFetching} className="btn btn-ghost btn-xs btn-square" title="Reîncarcă categoriile" aria-label="Reîncarcă categoriile">
                   <RefreshCw size={14} className={catFetching ? 'animate-spin' : ''} />
                 </button>
               )}
             </div>
             {!selectedLocation ? (
-              <div className="text-sm text-base-content/40 h-12 flex items-center font-mono">Select Location First</div>
+              <div className="text-sm text-base-content/40 h-12 flex items-center font-mono">Selectează mai întâi locația</div>
             ) : catLoading || catFetching ? (
               <div className="skeleton h-12 w-full rounded-lg"></div>
             ) : catError ? (
-              <div className="text-sm text-error">Failed to load</div>
+              <div className="text-sm text-error">Nu am putut încărca lista</div>
             ) : hasCategories ? (
               <div className="flex flex-col sm:flex-row gap-2">
                 <select
@@ -309,7 +328,7 @@ export default function ResourcesPage() {
                   value={selectedCategoryId}
                   onChange={(e) => setSelectedCategoryId(e.target.value)}
                 >
-                  <option value="" disabled>Choose category...</option>
+                  <option value="" disabled>Alege categoria...</option>
                   {categories!.map(cat => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name} ({cat.children?.length || 0})
@@ -318,7 +337,7 @@ export default function ResourcesPage() {
                 </select>
               </div>
             ) : (
-              <div className="text-sm text-warning h-12 flex items-center gap-2">No categories found</div>
+              <div className="text-sm text-warning h-12 flex items-center gap-2">Nu există categorii pentru locația selectată.</div>
             )}
             
             {/* Inline Category Creation */}
@@ -327,14 +346,14 @@ export default function ResourcesPage() {
                 <input
                   type="text"
                   className="input input-sm input-bordered flex-1 bg-base-200/30"
-                  placeholder="Create new category..."
+                  placeholder="Creează categorie nouă..."
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
                   disabled={isCreatingCat}
                 />
                 <button onClick={handleCreateCategory} disabled={isCreatingCat || !newCategoryName.trim()} className="btn btn-sm btn-ghost text-primary px-2">
-                  {isCreatingCat ? <span className="loading loading-spinner loading-xs"></span> : <Plus size={14} />} Create
+                  {isCreatingCat ? <span className="loading loading-spinner loading-xs"></span> : <Plus size={14} />} Creează
                 </button>
               </div>
             )}
@@ -350,35 +369,35 @@ export default function ResourcesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column for Input Methods */}
         <div className="space-y-6 lg:col-span-1 h-full">
-          <div className="card bg-base-100 shadow-xl border border-base-200 h-full">
+          <div className="card h-full border border-base-200 bg-base-100 shadow-sm">
             <div className="card-body">
               <h2 className="card-title text-lg flex items-center gap-2">
-                <Users size={20} className="text-primary" /> Add Resources
+                <Users size={20} className="text-primary" /> Adaugă resurse
               </h2>
               
               <div role="tablist" className="tabs tabs-boxed mt-4 bg-base-200/50 p-1">
-                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold" aria-label="Excel Upload" defaultChecked />
+                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold" aria-label="Import Excel" defaultChecked />
                 <div role="tabpanel" className="tab-content py-6">
                   <ResourceUploader 
                     onResourcesParsed={(newDrafts) => setResources(prev => [...prev, ...newDrafts])}
                     selectedLocation={selectedLocation}
                     selectedCategoryId={selectedCategoryId}
-                    resourceColors={RESOURCE_COLORS}
+                    resourceColors={[...RESOURCE_SWATCHES]}
                     currentCount={resources.length}
                   />
                 </div>
 
-                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold whitespace-nowrap" aria-label="Manual Entry" />
+                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold whitespace-nowrap" aria-label="Adăugare manuală" />
                 <div role="tabpanel" className="tab-content py-6">
                   <div className="form-control">
                     <label className="label">
-                      <span className="label-text font-semibold flex items-center gap-1"><Pencil size={14} /> Resource Name</span>
+                      <span className="label-text font-semibold flex items-center gap-1"><Pencil size={14} /> Nume resursă</span>
                     </label>
                     <div className="flex gap-2">
                       <input
                         type="text"
                         className="input input-bordered flex-1 bg-base-100"
-                        placeholder="e.g. Cabinet 1"
+                        placeholder="ex. Cabinet 1"
                         value={manualName}
                         onChange={(e) => setManualName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddManual()}
@@ -390,11 +409,11 @@ export default function ResourcesPage() {
                   </div>
                 </div>
 
-                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold whitespace-nowrap" aria-label="Paste Data" />
+                <input type="radio" name="input_tabs" role="tab" className="tab font-semibold whitespace-nowrap" aria-label="Lipește listă" />
                 <div role="tabpanel" className="tab-content py-6">
                   <div className="form-control">
                     <label className="label">
-                      <span className="label-text font-semibold flex items-center gap-1"><ClipboardPaste size={14} /> Paste Names</span>
+                      <span className="label-text font-semibold flex items-center gap-1"><ClipboardPaste size={14} /> Lipește lista</span>
                     </label>
                     <textarea
                       className="textarea textarea-bordered w-full h-32 bg-base-100 font-mono text-sm leading-tight mb-2"
@@ -403,7 +422,7 @@ export default function ResourcesPage() {
                       onChange={(e) => setPasteText(e.target.value)}
                     />
                     <button onClick={handlePaste} disabled={!pasteText.trim()} className="btn btn-primary w-full shadow-sm gap-2">
-                      <Check size={16} /> Import Extracted
+                      <Check size={16} /> Importă lista
                     </button>
                   </div>
                 </div>
@@ -414,27 +433,27 @@ export default function ResourcesPage() {
 
         {/* Right column for Grid & Actions */}
         <div className="lg:col-span-2 space-y-6 h-full">
-          <div className="card bg-base-100 shadow-xl border border-base-200 h-full flex flex-col">
+          <div className="card h-full flex flex-col border border-base-200 bg-base-100 shadow-sm">
             <div className="card-body p-0 sm:p-6 overflow-hidden">
               <div className="flex justify-between items-center mb-4 px-4 sm:px-0">
                 <div>
-                  <h2 className="card-title text-lg">Resource Preview</h2>
+                  <h2 className="card-title text-lg">Previzualizare resurse</h2>
                   <p className="text-sm text-base-content/60">
-                    {resources.length} {resources.length === 1 ? 'resource' : 'resources'} ready to sync
+                    {resources.length} {resources.length === 1 ? 'resursă pregătită' : 'resurse pregătite'} pentru sincronizare
                   </p>
                 </div>
                 
                 {resources.length > 0 && (
-                  <button onClick={() => setResources([])} className="btn btn-ghost btn-sm text-error">Clear All</button>
+                  <button onClick={() => setResources([])} className="btn btn-ghost btn-sm text-error">Golește lista</button>
                 )}
               </div>
 
               {/* Status Pills */}
               {(successCount > 0 || errorCount > 0) && (
                 <div className="flex gap-2 px-4 sm:px-0 mb-4">
-                  {successCount > 0 && <span className="badge badge-success gap-1 text-xs"><Check size={12} /> {successCount} Created</span>}
-                  {errorCount > 0 && <span className="badge badge-error gap-1 text-xs"><X size={12} /> {errorCount} Failed</span>}
-                  {pendingCount > 0 && <span className="badge badge-ghost gap-1 text-xs">{pendingCount} Pending</span>}
+                  {successCount > 0 && <span className="badge badge-success gap-1 text-xs"><Check size={12} /> {successCount} create</span>}
+                  {errorCount > 0 && <span className="badge badge-error gap-1 text-xs"><X size={12} /> {errorCount} cu erori</span>}
+                  {pendingCount > 0 && <span className="badge badge-ghost gap-1 text-xs">{pendingCount} în așteptare</span>}
                 </div>
               )}
 
@@ -442,14 +461,14 @@ export default function ResourcesPage() {
               <div className="border border-base-200 rounded-lg overflow-hidden flex-1 mx-4 sm:mx-0">
                 <div className="grid grid-cols-[auto_1fr_1fr_auto] gap-3 px-4 py-2 bg-base-200/40 text-xs font-bold uppercase tracking-wider text-base-content/40 border-b border-base-200">
                   <div className="w-5"></div>
-                  <div>Name</div>
-                  <div className="hidden sm:block">Hours Summary</div>
+                  <div>Nume</div>
+                  <div className="hidden sm:block">Program</div>
                   <div className="w-20 text-right">Status</div>
                 </div>
 
                 <div className="max-h-[500px] overflow-y-auto divide-y divide-base-200/50">
                   {resources.length === 0 ? (
-                    <div className="text-center py-10 opacity-40 text-sm">No resources added. Use the left panel to add data.</div>
+                    <div className="text-center py-10 opacity-40 text-sm">Nu ai adăugat încă resurse. Folosește panoul din stânga pentru a pregăti lista.</div>
                   ) : resources.map((res) => {
                     const isExpanded = expandedResource === res.id;
                     return (
@@ -466,9 +485,17 @@ export default function ResourcesPage() {
                           <div className="text-xs text-base-content/40 truncate hidden sm:block">{hoursSummary(res.dateHours)}</div>
                           <div className="w-20 flex justify-end">
                             {res.syncStatus === 'success' && <span className="badge badge-xs badge-success gap-0.5 opacity-80 py-2"><Check size={10} /></span>}
-                            {res.syncStatus === 'error' && <span className="badge badge-xs badge-error">Error</span>}
+                            {res.syncStatus === 'error' && <span className="badge badge-xs badge-error">Eroare</span>}
                             {!res.syncStatus && (
-                              <button onClick={(e) => { e.stopPropagation(); removeResource(res.id); }} className="btn btn-xs btn-ghost text-base-content/20 hover:text-error p-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeResource(res.id);
+                                }}
+                                className="btn btn-sm btn-square btn-ghost text-base-content/35 hover:text-error"
+                                type="button"
+                                aria-label={`Elimină resursa ${res.name}`}
+                              >
                                 <Trash2 size={12} />
                               </button>
                             )}
@@ -480,15 +507,15 @@ export default function ResourcesPage() {
                           <div className="px-4 pb-4 pt-2 border-t border-base-200/30 bg-base-200/10 shadow-inner">
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                               <div>
-                                <label className="text-xs font-semibold text-base-content/40 block mb-1">Name</label>
+                                <label className="text-xs font-semibold text-base-content/40 block mb-1">Nume</label>
                                 <input type="text" className="input input-sm input-bordered w-full bg-base-100 focus:bg-base-100" value={res.name} onChange={(e) => updateResourceField(res.id, 'name', e.target.value)} />
                               </div>
                               <div>
-                                <label className="text-xs font-semibold text-base-content/40 block mb-1">Description</label>
-                                <input type="text" className="input input-sm input-bordered w-full bg-base-100 focus:bg-base-100" placeholder="Optional" value={res.description} onChange={(e) => updateResourceField(res.id, 'description', e.target.value)} />
+                                <label className="text-xs font-semibold text-base-content/40 block mb-1">Descriere</label>
+                                <input type="text" className="input input-sm input-bordered w-full bg-base-100 focus:bg-base-100" placeholder="Opțional" value={res.description} onChange={(e) => updateResourceField(res.id, 'description', e.target.value)} />
                               </div>
                               <div>
-                                <label className="text-xs font-semibold text-base-content/40 block mb-1">Color</label>
+                                <label className="text-xs font-semibold text-base-content/40 block mb-1">Culoare</label>
                                 <div className="flex items-center gap-2 h-8">
                                   <input type="color" className="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 shadow-sm" value={res.color} onChange={(e) => updateResourceField(res.id, 'color', e.target.value)} />
                                   <span className="text-xs font-mono text-base-content/50">{res.color}</span>
@@ -498,9 +525,9 @@ export default function ResourcesPage() {
 
                             <div className="divider my-2 opacity-30"></div>
                             
-                            <label className="text-xs font-semibold text-base-content/40 flex items-center gap-1.5 mb-2"><Clock size={12} /> Working Hours by Date</label>
+                            <label className="text-xs font-semibold text-base-content/40 flex items-center gap-1.5 mb-2"><Clock size={12} /> Program pe zile</label>
                             {res.dateHours.length === 0 ? (
-                              <p className="text-xs text-base-content/30 italic">No location dates available.</p>
+                              <p className="text-xs text-base-content/30 italic">Nu există zile configurate pentru locația selectată.</p>
                             ) : (
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {res.dateHours.map(dh => (
@@ -508,8 +535,13 @@ export default function ResourcesPage() {
                                     <div className="flex justify-between items-center mb-1">
                                       <span className="font-semibold">{dh.displayDate}</span>
                                       <div className="flex items-center gap-2">
-                                        {!dh.isOpen && <span className="text-base-content/30 text-[9px] uppercase tracking-wide">Closed</span>}
-                                        <button onClick={() => addPeriod(res.id, dh.dateKey)} className="btn btn-ghost btn-xs px-1 h-5 min-h-0 text-primary bg-primary/5 hover:bg-primary/20">
+                                        {!dh.isOpen && <span className="text-base-content/30 text-[9px] uppercase tracking-wide">Închis</span>}
+                                        <button
+                                          onClick={() => addPeriod(res.id, dh.dateKey)}
+                                          className="btn btn-ghost btn-sm btn-square h-8 min-h-8 w-8 text-primary bg-primary/5 hover:bg-primary/20"
+                                          type="button"
+                                          aria-label={`Adaugă interval pentru ${dh.displayDate}`}
+                                        >
                                           <Plus size={10} />
                                         </button>
                                       </div>
@@ -521,7 +553,12 @@ export default function ResourcesPage() {
                                             <input type="time" className="input input-bordered input-xs bg-base-200/50 w-24 h-6 text-xs text-center font-mono" value={period.from} onChange={(e) => updatePeriod(res.id, dh.dateKey, pIdx, 'from', e.target.value)} />
                                             <span className="text-base-content/20 shrink-0">→</span>
                                             <input type="time" className="input input-bordered input-xs bg-base-200/50 w-24 h-6 text-xs text-center font-mono" value={period.to} onChange={(e) => updatePeriod(res.id, dh.dateKey, pIdx, 'to', e.target.value)} />
-                                            <button onClick={() => removePeriod(res.id, dh.dateKey, pIdx)} className="btn btn-ghost btn-xs px-1 h-5 min-h-0 rounded-md text-error/40 hover:text-error hover:bg-error/10">
+                                            <button
+                                              onClick={() => removePeriod(res.id, dh.dateKey, pIdx)}
+                                              className="btn btn-ghost btn-sm btn-square h-8 min-h-8 w-8 rounded-md text-error/50 hover:text-error hover:bg-error/10"
+                                              type="button"
+                                              aria-label={`Elimină intervalul ${period.from}-${period.to} din ${dh.displayDate}`}
+                                            >
                                               <Minus size={12} />
                                             </button>
                                           </div>
@@ -547,10 +584,10 @@ export default function ResourcesPage() {
                   <button 
                     disabled={!selectedCategoryId || isProcessing || pendingCount === 0}
                     onClick={handleBulkCreate}
-                    className="btn btn-primary btn-lg gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+                    className="btn btn-primary btn-lg gap-2 shadow-sm"
                   >
                     {isProcessing ? <span className="loading loading-spinner"></span> : <PlayCircle />}
-                    Execute Pipeline
+                    Sincronizează resursele
                   </button>
                 </div>
               )}
@@ -560,11 +597,11 @@ export default function ResourcesPage() {
       </div>
 
       {/* ── Terminal Logs ─────────────────────────────────────────── */}
-      <div className="mockup-code bg-base-300 text-base-content border border-base-200 mt-6 shadow-xl w-full">
-        <div className="px-5 mb-2 opacity-50 text-xs">Pipeline Operations Logs</div>
+      <div className="mockup-code mt-6 w-full border border-base-200 bg-base-300 text-base-content shadow-sm">
+        <div className="px-5 mb-2 opacity-50 text-xs">Jurnal operațiuni</div>
         <div className="max-h-64 overflow-y-auto">
           {logs.length === 0 ? (
-            <pre data-prefix="$"><code className="opacity-50">Waiting for commands...</code></pre>
+            <pre data-prefix="$"><code className="opacity-50">În așteptarea operațiunilor...</code></pre>
           ) : (
             logs.map((log, idx) => (
               <pre data-prefix={log.includes('[Error]') ? "!" : ">"} key={idx} className={log.includes('[Error]') ? 'text-error font-semibold' : log.includes('[Success]') || log.includes('✅') ? 'text-success' : 'text-info'}>

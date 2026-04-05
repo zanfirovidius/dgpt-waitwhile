@@ -224,7 +224,7 @@ export default function DoctorsPage() {
 
           <label className="select select-bordered rounded-xl flex items-center gap-2 px-3">
             <Filter size={16} className="text-base-content/50" />
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="grow bg-transparent outline-none">
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="grow bg-transparent">
               <option value="all">Toate statusurile</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -233,7 +233,7 @@ export default function DoctorsPage() {
           </label>
 
           <label className="select select-bordered rounded-xl">
-            <select value={gradeFilter} onChange={(event) => setGradeFilter(event.target.value)} className="w-full bg-transparent outline-none">
+            <select value={gradeFilter} onChange={(event) => setGradeFilter(event.target.value)} className="w-full bg-transparent">
               <option value="all">Toate gradele</option>
               {grades.map((grade) => (
                 <option key={grade} value={grade}>{grade}</option>
@@ -242,7 +242,7 @@ export default function DoctorsPage() {
           </label>
 
           <label className="select select-bordered rounded-xl">
-            <select value={imageFilter} onChange={(event) => setImageFilter(event.target.value)} className="w-full bg-transparent outline-none">
+            <select value={imageFilter} onChange={(event) => setImageFilter(event.target.value)} className="w-full bg-transparent">
               <option value="all">Toate imaginile</option>
               <option value="has_image">Are imagine</option>
               <option value="no_image">Fără imagine</option>

@@ -152,6 +152,28 @@ function buildProjectDayOptions(project?: Project | null) {
   }));
 }
 
+function formatProjectDateRange(project?: Project | null) {
+  if (!project?.startDate) {
+    return '';
+  }
+
+  const start = parseISO(project.startDate);
+  const end = parseISO(project.endDate || project.startDate);
+
+  if (!isValid(start) || !isValid(end)) {
+    return '';
+  }
+
+  const startKey = format(start, 'yyyy-MM-dd');
+  const endKey = format(end, 'yyyy-MM-dd');
+
+  if (startKey === endKey) {
+    return format(start, 'd MMMM yyyy', { locale: ro });
+  }
+
+  return `${format(start, 'd MMM', { locale: ro })} - ${format(end, 'd MMM yyyy', { locale: ro })}`;
+}
+
 function getVolunteerDisplayName(volunteer?: Pick<ProjectVolunteer, 'firstName' | 'lastName'> | null) {
   return [volunteer?.firstName || '', volunteer?.lastName || '']
     .join(' ')
@@ -505,6 +527,82 @@ export default function ProjectCabinetsPage() {
   const dailyChecklistPdfHref = selectedDay
     ? `/api/projects/${projectId}/cabinets/checklist-pdf?date=${encodeURIComponent(selectedDay)}`
     : '';
+  const selectedDayOption = dayOptions.find((day) => day.value === selectedDay) || null;
+  const projectTitle = project?.eventName || project?.name || 'Proiect';
+  const projectLocationLabel = [project?.city || project?.locationName || '', project?.venue || '']
+    .filter(Boolean)
+    .join(' · ');
+  const projectDateRange = formatProjectDateRange(project);
+  const overviewStats = [
+    {
+      label: 'Cabinete active',
+      value: cabinets.length,
+      hint: 'spații fizice definite',
+      tone: 'primary' as const,
+    },
+    {
+      label: 'Sloturi definite',
+      value: disciplineAssignments.length,
+      hint: 'discipline programate',
+      tone: 'default' as const,
+    },
+    {
+      label: 'Alocări totale',
+      value: assignments.length,
+      hint: 'disciplină și personal',
+      tone: 'secondary' as const,
+    },
+    {
+      label: 'Voluntari activi',
+      value: activeProjectVolunteers.length,
+      hint: 'disponibili în proiect',
+      tone: 'default' as const,
+    },
+  ];
+  const selectedDayOverviewStats = [
+    {
+      label: 'Alocări',
+      value: selectedDayStats.total,
+      hint: 'intervale cu personal',
+      tone: 'primary' as const,
+    },
+    {
+      label: 'Sloturi',
+      value: selectedDayStats.disciplineAssigned,
+      hint: 'discipline active',
+      tone: 'default' as const,
+    },
+    {
+      label: 'Medici',
+      value: selectedDayStats.doctorAssigned,
+      hint: 'în program',
+      tone: 'default' as const,
+    },
+    {
+      label: 'Asistenți',
+      value: selectedDayStats.assistantAssigned,
+      hint: 'în program',
+      tone: 'default' as const,
+    },
+    {
+      label: 'Șefi cabinet',
+      value: selectedDayStats.cabinetChiefAssigned,
+      hint: 'coordonare',
+      tone: 'default' as const,
+    },
+    {
+      label: 'Responsabili',
+      value: selectedDayStats.responsibleAssigned,
+      hint: 'suport tehnic',
+      tone: 'default' as const,
+    },
+    {
+      label: 'Neasignate',
+      value: selectedDayStats.unassigned,
+      hint: selectedDayStats.unassigned > 0 ? 'necesită acțiune' : 'acoperite',
+      tone: selectedDayStats.unassigned > 0 ? ('warning' as const) : ('success' as const),
+    },
+  ];
 
   const resetCabinetForm = useCallback(() => {
     setEditingCabinetId(null);
@@ -897,33 +995,108 @@ export default function ProjectCabinetsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <Link href={`/projects/${projectId}`} className="btn btn-ghost btn-sm gap-2 px-0">
-            <ArrowLeft size={14} /> Înapoi la proiect
-          </Link>
-          <h1 className="mt-3 flex items-center gap-3 text-3xl font-black text-base-content">
-            <Stethoscope className="text-primary" size={28} />
-            Cabinete Medicale & Program
-          </h1>
-          <p className="mt-1 text-sm text-base-content/60">
-            Configurezi cabinetele fizice ale evenimentului, definești sloturile de specialitate pentru fiecare cabinet și apoi aloci personalul pe acele sloturi.
-          </p>
-        </div>
+    <div className="space-y-8">
+      <div className="rounded-[2.25rem] border border-base-300 bg-base-100 p-6 shadow-sm">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(19rem,0.95fr)]">
+          <div className="space-y-6">
+            <div>
+              <Link href={`/projects/${projectId}`} className="btn btn-ghost btn-sm gap-2 px-0">
+                <ArrowLeft size={14} /> Înapoi la proiect
+              </Link>
+              <div className="mt-4 inline-flex rounded-full border border-base-300 bg-base-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/50">
+                Flux operațional cabinete
+              </div>
+              <h1 className="mt-4 flex items-center gap-3 text-3xl font-black text-base-content md:text-4xl">
+                <Stethoscope className="text-primary" size={30} />
+                Cabinete Medicale & Program
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-base-content/65">
+                Configurezi spațiile fizice, definești sloturile de specialitate pentru fiecare cabinet și coordonezi
+                personalul direct pe ziua de lucru selectată.
+              </p>
+            </div>
 
-        <div className="flex flex-wrap gap-3">
-          <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3 shadow-sm">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/40">Cabinete</div>
-            <div className="mt-1 text-2xl font-black">{cabinets.length}</div>
+            <div className="flex flex-wrap gap-2 text-sm text-base-content/65">
+              <span className="rounded-full border border-base-300 bg-base-50 px-3 py-1.5 font-semibold text-base-content">
+                {projectTitle}
+              </span>
+              {projectLocationLabel ? (
+                <span className="rounded-full border border-base-300 bg-base-50 px-3 py-1.5">
+                  {projectLocationLabel}
+                </span>
+              ) : null}
+              {projectDateRange ? (
+                <span className="rounded-full border border-base-300 bg-base-50 px-3 py-1.5">{projectDateRange}</span>
+              ) : null}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {overviewStats.map((item) => (
+                <div
+                  key={item.label}
+                  className={`rounded-[1.5rem] border px-4 py-4 ${
+                    item.tone === 'primary'
+                      ? 'border-primary/20 bg-primary/5'
+                      : item.tone === 'secondary'
+                        ? 'border-secondary/20 bg-secondary/5'
+                        : 'border-base-300 bg-base-50'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">
+                    {item.label}
+                  </div>
+                  <div className="mt-2 text-3xl font-black text-base-content">{item.value}</div>
+                  <div className="mt-1 text-xs text-base-content/55">{item.hint}</div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3 shadow-sm">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/40">Alocări</div>
-            <div className="mt-1 text-2xl font-black">{assignments.length}</div>
-          </div>
-          <div className="rounded-2xl border border-base-300 bg-base-100 px-4 py-3 shadow-sm">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/40">Voluntari activi</div>
-            <div className="mt-1 text-2xl font-black">{activeProjectVolunteers.length}</div>
+
+          <div className="rounded-[1.75rem] border border-primary/15 bg-primary/5 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between xl:flex-col xl:justify-start">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">
+                  Zi activă
+                </div>
+                <div className="mt-2 text-xl font-black text-base-content">
+                  {selectedDayOption?.label || 'Alege o zi de lucru'}
+                </div>
+                <p className="mt-2 text-sm leading-6 text-base-content/65">
+                  Ziua selectată actualizează formularul de programare, tabela operațională și checklist-ul derivat.
+                </p>
+              </div>
+
+              {dailyChecklistHref ? (
+                <div className="flex flex-wrap gap-2">
+                  <Link href={dailyChecklistHref} target="_blank" className="btn btn-outline btn-sm gap-2">
+                    <Printer size={14} /> Checklist zi
+                  </Link>
+                  <a href={dailyChecklistPdfHref} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm gap-2">
+                    <Download size={14} /> PDF
+                  </a>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              {dayOptions.map((day) => (
+                <button
+                  key={day.value}
+                  type="button"
+                  className={`btn btn-sm rounded-full ${
+                    selectedDay === day.value ? 'btn-primary' : 'btn-ghost border border-base-300 bg-base-100'
+                  }`}
+                  onClick={() => {
+                    setSelectedDay(day.value);
+                    if (!editingAssignmentId) {
+                      setAssignmentForm((current) => ({ ...current, assignmentDate: day.value }));
+                    }
+                  }}
+                >
+                  {day.shortLabel}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -934,35 +1107,6 @@ export default function ProjectCabinetsPage() {
           <span>{message.text}</span>
         </div>
       )}
-
-      <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-xl font-black text-base-content">{project.eventName || project.name}</h2>
-            <p className="text-sm text-base-content/60">
-              {project.city || project.locationName}
-              {project.venue ? ` · ${project.venue}` : ''}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {dayOptions.map((day) => (
-              <button
-                key={day.value}
-                type="button"
-                className={`btn btn-sm rounded-full ${selectedDay === day.value ? 'btn-primary' : 'btn-ghost border border-base-300'}`}
-                onClick={() => {
-                  setSelectedDay(day.value);
-                  if (!editingAssignmentId) {
-                    setAssignmentForm((current) => ({ ...current, assignmentDate: day.value }));
-                  }
-                }}
-              >
-                {day.shortLabel}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
 
       <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1098,8 +1242,17 @@ export default function ProjectCabinetsPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.05fr,1.35fr]">
-        <div className="space-y-6">
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+        <section className="space-y-6">
+          <div className="space-y-2 px-1">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">Pasul 1</div>
+            <h2 className="text-2xl font-black text-base-content">Configurezi spațiile și sloturile</h2>
+            <p className="max-w-2xl text-sm leading-6 text-base-content/60">
+              Stabilești structura fizică a cabinetelor, fallback-ul de specialitate și intervalele care vor putea
+              primi personal în ziua de lucru.
+            </p>
+          </div>
+
           <div
             ref={cabinetFormCardRef}
             className={`rounded-[2rem] border bg-base-100 p-6 shadow-sm transition-colors ${
@@ -1193,7 +1346,7 @@ export default function ProjectCabinetsPage() {
               </label>
             </div>
 
-            <div className="mt-6 rounded-[1.5rem] border border-primary/15 bg-primary/5 p-4">
+            <div className="mt-8 border-t border-base-200 pt-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="flex items-center gap-2 text-base font-black text-base-content">
@@ -1204,18 +1357,23 @@ export default function ProjectCabinetsPage() {
                     Aici definești ce disciplină funcționează în cabinetul fizic, pe zi și pe interval. După salvare, aceste sloturi vor putea primi medici, asistenți și șefi de cabinet.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm gap-2"
-                  onClick={() =>
-                    setCabinetForm((current) => ({
-                      ...current,
-                      specialtySchedule: [...(current.specialtySchedule || []), createScheduleSlot(selectedDay)],
-                    }))
-                  }
-                >
-                  <Plus size={14} /> Adaugă slot
-                </button>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-base-300 bg-base-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">
+                    {(cabinetForm.specialtySchedule || []).length} sloturi
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm gap-2"
+                    onClick={() =>
+                      setCabinetForm((current) => ({
+                        ...current,
+                        specialtySchedule: [...(current.specialtySchedule || []), createScheduleSlot(selectedDay)],
+                      }))
+                    }
+                  >
+                    <Plus size={14} /> Adaugă slot
+                  </button>
+                </div>
               </div>
 
               <div className="mt-4 space-y-4">
@@ -1449,7 +1607,7 @@ export default function ProjectCabinetsPage() {
               </div>
             </div>
 
-            <div className="mt-6 rounded-[1.5rem] border border-base-300 bg-base-50 p-4">
+            <div className="mt-8 border-t border-base-200 pt-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="flex items-center gap-2 text-base font-black text-base-content">
@@ -1460,18 +1618,23 @@ export default function ProjectCabinetsPage() {
                     Ce definești aici rămâne legat de cabinetul fizic. La programare poți adăuga și materiale specifice disciplinei din interval.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm gap-2"
-                  onClick={() =>
-                    setCabinetForm((current) => ({
-                      ...current,
-                      materials: [...(current.materials || []), createMaterialItem()],
-                    }))
-                  }
-                >
-                  <Plus size={14} /> Adaugă material
-                </button>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-base-300 bg-base-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">
+                    {(cabinetForm.materials || []).length} materiale
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm gap-2"
+                    onClick={() =>
+                      setCabinetForm((current) => ({
+                        ...current,
+                        materials: [...(current.materials || []), createMaterialItem()],
+                      }))
+                    }
+                  >
+                    <Plus size={14} /> Adaugă material
+                  </button>
+                </div>
               </div>
 
               <div className="mt-4 space-y-3">
@@ -1623,9 +1786,18 @@ export default function ProjectCabinetsPage() {
               )}
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="space-y-6">
+        <section className="space-y-6">
+          <div className="space-y-2 px-1">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">Pasul 2</div>
+            <h2 className="text-2xl font-black text-base-content">Coordonezi ziua selectată</h2>
+            <p className="max-w-3xl text-sm leading-6 text-base-content/60">
+              Aloci oamenii pe sloturile deja definite, urmărești acoperirea pe zi și generezi rapid materialele de
+              lucru pentru operațiuni.
+            </p>
+          </div>
+
           <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
@@ -1634,27 +1806,41 @@ export default function ProjectCabinetsPage() {
                   Pentru ziua selectată alegi cabinetul fizic și unul dintre sloturile de specialitate deja definite pe acel cabinet. Apoi aloci personalul pe acel slot.
                 </p>
               </div>
-
-              <div className="flex flex-wrap gap-2">
-                <div className="badge badge-outline badge-lg">{selectedDayStats.total} alocări</div>
-                <div className="badge badge-outline badge-lg">{selectedDayStats.disciplineAssigned} sloturi</div>
-                <div className="badge badge-outline badge-lg">{selectedDayStats.doctorAssigned} medici</div>
-                <div className="badge badge-outline badge-lg">{selectedDayStats.assistantAssigned} asistenți</div>
-                <div className="badge badge-outline badge-lg">{selectedDayStats.cabinetChiefAssigned} șefi cabinet</div>
-                <div className="badge badge-outline badge-lg">{selectedDayStats.responsibleAssigned} responsabili</div>
-                <div className={`badge badge-lg ${selectedDayStats.unassigned > 0 ? 'badge-warning' : 'badge-ghost'}`}>
-                  {selectedDayStats.unassigned} neasignate
-                </div>
-              </div>
             </div>
 
-            <div className="mt-5 rounded-[1.5rem] border border-primary/15 bg-primary/5 p-5">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+              {selectedDayOverviewStats.map((item) => (
+                <div
+                  key={item.label}
+                  className={`rounded-[1.35rem] border px-4 py-4 ${
+                    item.tone === 'primary'
+                      ? 'border-primary/20 bg-primary/5'
+                      : item.tone === 'warning'
+                        ? 'border-warning/25 bg-warning/10'
+                        : item.tone === 'success'
+                          ? 'border-success/20 bg-success/10'
+                          : 'border-base-300 bg-base-50'
+                  }`}
+                >
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">
+                    {item.label}
+                  </div>
+                  <div className="mt-2 text-2xl font-black text-base-content">{item.value}</div>
+                  <div className="mt-1 text-xs text-base-content/55">{item.hint}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 border-t border-base-200 pt-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-base-content/45">Zi selectată</div>
                   <div className="mt-1 text-lg font-black text-base-content">
-                    {dayOptions.find((day) => day.value === selectedDay)?.label || 'Alege o zi'}
+                    {selectedDayOption?.label || 'Alege o zi'}
                   </div>
+                  <p className="mt-1 text-sm text-base-content/60">
+                    Formularul rămâne blocat pe sloturile definite pentru această zi, ca să eviți alocările greșite.
+                  </p>
                 </div>
                 {editingAssignmentId && (
                   <button type="button" className="btn btn-ghost btn-sm gap-2" onClick={resetAssignmentForm}>
@@ -1717,7 +1903,7 @@ export default function ProjectCabinetsPage() {
                       {selectedAssignmentCabinet.identifier} · {selectedAssignmentCabinet.name}
                     </div>
                     <div className="mt-1">
-                      Sloturi definite pentru {dayOptions.find((day) => day.value === selectedDay)?.shortLabel || selectedDay}: {selectedCabinetDisciplineSlots.length}
+                      Sloturi definite pentru {selectedDayOption?.shortLabel || selectedDay}: {selectedCabinetDisciplineSlots.length}
                     </div>
                     <div className="mt-1">
                       Echipare fizică definită: {(selectedAssignmentCabinet.materials || []).length} articole
@@ -1956,9 +2142,20 @@ export default function ProjectCabinetsPage() {
                   </Link>
                 )}
                 <div className="badge badge-outline badge-lg">
-                  {dayOptions.find((day) => day.value === selectedDay)?.shortLabel || 'Fără zi selectată'}
+                  {selectedDayOption?.shortLabel || 'Fără zi selectată'}
                 </div>
               </div>
+            </div>
+
+            <div className="mt-5 rounded-[1.25rem] border border-base-300 bg-base-50 px-4 py-3 text-sm text-base-content/65">
+              <span className="font-semibold text-base-content">
+                {selectedDayStats.total} alocări
+              </span>{' '}
+              înregistrate pentru această zi, distribuite pe{' '}
+              <span className="font-semibold text-base-content">{selectedDayStats.disciplineAssigned} sloturi</span>.
+              {selectedDayStats.unassigned > 0
+                ? ` Mai există ${selectedDayStats.unassigned} poziții care cer atenție.`
+                : ' Toate pozițiile urmărite aici sunt acoperite.'}
             </div>
 
             <div className="mt-5 overflow-hidden rounded-[1.5rem] border border-base-300">
@@ -2080,7 +2277,12 @@ export default function ProjectCabinetsPage() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4">
+            <div className="mt-5 rounded-[1.25rem] border border-base-300 bg-base-50 px-4 py-3 text-sm text-base-content/65">
+              Fiecare fișă reunește cabinetul fizic, intervalul activ, rolurile alocate și materialele rezultate pentru
+              execuția din teren.
+            </div>
+
+            <div className="mt-5 grid gap-4 2xl:grid-cols-2">
               {selectedDayPackets.map((packet) => (
                 <div key={packet.assignmentId} className="rounded-[1.5rem] border border-base-300 bg-base-50 p-4">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -2153,7 +2355,7 @@ export default function ProjectCabinetsPage() {
               )}
             </div>
           </div>
-        </div>
+        </section>
       </div>
 
       <DoctorModal
