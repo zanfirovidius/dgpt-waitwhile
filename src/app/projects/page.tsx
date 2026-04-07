@@ -133,10 +133,10 @@ export default function ProjectsPage() {
                   </button>
                 </div>
 
-                <div className="space-y-2 mb-4">
-                    <p className="text-xs text-base-content/50 flex items-center gap-1.5 line-clamp-1">
-                        <MapPin size={12} className="text-primary/40 shrink-0" /> {project.locationName}
-                    </p>
+	                <div className="space-y-2 mb-4">
+	                    <p className="text-xs text-base-content/50 flex items-center gap-1.5 line-clamp-1">
+	                        <MapPin size={12} className="text-primary/40 shrink-0" /> {project.locationName || 'Fără locație Waitwhile'}
+	                    </p>
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] uppercase font-bold tracking-wider text-base-content/30">
                             {formatProjectDateRange(project, { day: 'numeric', month: 'short', year: 'numeric' })}

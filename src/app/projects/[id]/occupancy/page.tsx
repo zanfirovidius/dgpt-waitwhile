@@ -61,6 +61,37 @@ export default function ProjectOccupancyPage() {
     );
   }
 
+  if (!project.locationId) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <Link href={`/projects/${project.$id}`} className="btn btn-ghost btn-sm gap-2 px-0">
+            <ArrowLeft size={14} /> Înapoi la proiect
+          </Link>
+          <h1 className="mt-3 flex items-center gap-3 text-3xl font-black text-base-content">
+            <BarChart3 className="text-warning" size={28} />
+            Ocupare cabinete
+          </h1>
+        </div>
+
+        <div className="rounded-2xl border border-warning/20 bg-warning/5 p-6 text-sm text-base-content shadow-sm">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 text-warning" size={18} />
+            <div className="space-y-3">
+              <p className="font-semibold">Acest proiect nu are încă o locație Waitwhile asociată.</p>
+              <p className="text-base-content/70">
+                Deschide proiectul, intră în modul de editare și selectează locația Waitwhile pentru a putea calcula occupancy.
+              </p>
+              <Link href={`/projects/${project.$id}`} className="btn btn-warning btn-sm gap-2">
+                Configurează locația
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>

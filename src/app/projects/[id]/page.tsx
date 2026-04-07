@@ -3,6 +3,7 @@
 import { AttendanceConfig, getProjectAttendanceConfig } from '@/app/actions/attendance-config';
 import { FeedbackConfig, getProjectFeedbackConfig } from '@/app/actions/feedback-config';
 import { deleteProject, getProject, Project, updateProject } from '@/app/actions/projects';
+import LocationSelector from '@/components/LocationSelector';
 import { ProjectTagBadges } from '@/components/projects/ProjectTagBadges';
 import { ProjectTagPicker } from '@/components/projects/ProjectTagPicker';
 import { ProjectStatusSwitch } from '@/components/projects/ProjectStatusSwitch';
@@ -36,6 +37,11 @@ type LoadedProjectState = {
   error: string;
 };
 
+type LocationOption = {
+  id: string;
+  name: string;
+};
+
 export default function ProjectDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -53,6 +59,7 @@ export default function ProjectDetailPage() {
   const [smsTestMessage, setSmsTestMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [error, setError] = useState('');
   const [newVolunteerRole, setNewVolunteerRole] = useState('');
+  const [waitwhileLocations, setWaitwhileLocations] = useState<LocationOption[]>([]);
 
   const id = typeof params.id === 'string' ? params.id : params.id?.[0];
 
@@ -183,6 +190,16 @@ export default function ProjectDetailPage() {
     setIsSendingSmsTest(false);
   };
 
+  const handleWaitwhileLocationChange = (locId: string) => {
+    const nextLocation = waitwhileLocations.find((location) => location.id === locId);
+
+    setEditData((current) => ({
+      ...current,
+      locationId: locId,
+      locationName: nextLocation?.name || '',
+    }));
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-20">
@@ -211,6 +228,7 @@ export default function ProjectDetailPage() {
     month: 'long',
     day: 'numeric',
   });
+  const waitwhileLocationLabel = project.locationName || 'Fără locație Waitwhile';
 
   return (
     <div className="space-y-6 max-w-8xl">
@@ -275,14 +293,22 @@ export default function ProjectDetailPage() {
                         />
                     </div>
                 </div>
-                <div className="form-control">
-                    <label className="label"><span className="label-text font-bold">Locație / Sală</span></label>
-                    <input 
-                      type="text" 
-                      className="input input-bordered w-full" 
-                      value={editData.locationName || ''} 
-                      onChange={(e) => setEditData({ ...editData, locationName: e.target.value })} 
+                <div className="form-control gap-3">
+                    <label className="label"><span className="label-text font-bold">Locație Waitwhile</span></label>
+                    <LocationSelector
+                      selectedLocation={editData.locationId || ''}
+                      onChange={handleWaitwhileLocationChange}
+                      onLocationsLoaded={setWaitwhileLocations}
+                      allowEmptyOption
+                      emptyOptionLabel="Adaugă locația Waitwhile mai târziu"
                     />
+                    <label className="label pt-0">
+                      <span className="label-text-alt text-base-content/50">
+                        {editData.locationId
+                          ? `ID locație: ${editData.locationId}`
+                          : 'Proiectul poate fi salvat fără locație Waitwhile și conectat ulterior.'}
+                      </span>
+                    </label>
                 </div>
 
                 <div className="form-control gap-3">
@@ -459,7 +485,7 @@ export default function ProjectDetailPage() {
                     {getProjectStatusLabel(project.projectStatus)}
                   </div>
                   <div className="badge badge-outline badge-lg gap-1.5 py-3">
-                    <MapPin size={14} className="text-primary" /> {project.locationName}
+                    <MapPin size={14} className="text-primary" /> {waitwhileLocationLabel}
                   </div>
                 </div>
                 </div>
@@ -480,8 +506,13 @@ export default function ProjectDetailPage() {
 	                       <span className="font-medium">{project.city || '-'}{project.city && project.venue ? ' / ' : ''}{project.venue || '-'}</span>
 	                   </div>
                      <div>
-                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Etichete regionale</span>
-                       {project.projectTags && project.projectTags.length > 0 ? (
+                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Locație Waitwhile</span>
+                       <span className="font-medium">{waitwhileLocationLabel}</span>
+                       <span className="mt-1 block text-xs font-mono text-base-content/45">{project.locationId || 'Neasignat'}</span>
+                     </div>
+	                     <div>
+	                       <span className="block opacity-40 font-bold uppercase text-[10px] tracking-wider mb-1">Etichete regionale</span>
+	                       {project.projectTags && project.projectTags.length > 0 ? (
                          <ProjectTagBadges tags={project.projectTags} />
                        ) : (
                          <span className="font-medium">-</span>

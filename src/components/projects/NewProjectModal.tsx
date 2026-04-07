@@ -2,6 +2,7 @@
 
 import { createProject } from '@/app/actions/projects';
 import LocationSelector from '@/components/LocationSelector';
+import { getTodayDateString, normalizeProjectDateValue } from '@/lib/project-dates';
 import { type ProjectTagCode } from '@/lib/project-tags';
 import { getProjectStatusLabel, type ProjectStatus } from '@/lib/project-status';
 import { CalendarDays, FolderPlus, X } from 'lucide-react';
@@ -51,9 +52,23 @@ function NewProjectModalContent({
 }: Omit<NewProjectModalProps, 'isOpen'>) {
   const titleId = useId();
   const descriptionId = useId();
+  const today = getTodayDateString();
+  const normalizedInitialStartDate = normalizeProjectDateValue(initialStartDate);
+  const safeInitialStartDate = normalizedInitialStartDate
+    ? normalizedInitialStartDate < today
+      ? today
+      : normalizedInitialStartDate
+    : '';
+  const normalizedInitialEndDate = normalizeProjectDateValue(initialEndDate ?? initialStartDate);
+  const safeInitialEndDate = normalizedInitialEndDate
+    ? safeInitialStartDate && normalizedInitialEndDate < safeInitialStartDate
+      ? safeInitialStartDate
+      : normalizedInitialEndDate
+    : safeInitialStartDate;
+  const wasInitialStartDateAdjusted = Boolean(normalizedInitialStartDate && normalizedInitialStartDate < today);
   const [name, setName] = useState('');
-  const [startDate, setStartDate] = useState(initialStartDate ?? '');
-  const [endDate, setEndDate] = useState(initialEndDate ?? initialStartDate ?? '');
+  const [startDate, setStartDate] = useState(safeInitialStartDate);
+  const [endDate, setEndDate] = useState(safeInitialEndDate);
   const [locationId, setLocationId] = useState('');
   const [locationName, setLocationName] = useState('');
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -64,11 +79,6 @@ function NewProjectModalContent({
 
   const handleLocationsLoaded = (nextLocations: LocationOption[]) => {
     setLocations(nextLocations);
-
-    if (nextLocations.length > 0 && !locationId) {
-      setLocationId(nextLocations[0].id);
-      setLocationName(nextLocations[0].name);
-    }
   };
 
   const handleLocationChange = (locId: string) => {
@@ -80,7 +90,12 @@ function NewProjectModalContent({
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!name || !locationId || !startDate || !endDate) {
+    if (!name || !startDate || !endDate) {
+      return;
+    }
+
+    if (startDate < today) {
+      setError('Data de început trebuie să fie astăzi sau într-o zi viitoare.');
       return;
     }
 
@@ -94,8 +109,8 @@ function NewProjectModalContent({
 
     const result = await createProject({
       name,
-      locationId,
-      locationName,
+      locationId: locationId || '',
+      locationName: locationName || '',
       startDate,
       endDate,
       projectStatus,
@@ -137,7 +152,11 @@ function NewProjectModalContent({
             <p id={descriptionId} className="ui-body mt-2 text-base-content/60">
               Completează detaliile de bază și creează proiectul direct din lista de proiecte.
             </p>
-            {initialStartDate ? (
+            {wasInitialStartDateAdjusted ? (
+              <p className="mt-2 text-sm text-warning">
+                Data selectată este în trecut, așa că începutul proiectului a fost mutat la data curentă.
+              </p>
+            ) : initialStartDate ? (
               <p className="mt-2 text-sm text-primary/80">
                 Data selectată din calendar a fost precompletată ca punct de pornire.
               </p>
@@ -192,12 +211,15 @@ function NewProjectModalContent({
                     type="date"
                     className="input input-bordered w-full bg-base-200 focus:bg-base-100"
                     value={startDate}
+                    min={today}
                     onChange={(event) => {
-                      const nextStartDate = event.target.value;
+                      const nextStartDate = normalizeProjectDateValue(event.target.value);
+                      const boundedStartDate =
+                        nextStartDate && nextStartDate < today ? today : nextStartDate;
 
-                      setStartDate(nextStartDate);
-                      if (!endDate || endDate < nextStartDate) {
-                        setEndDate(nextStartDate);
+                      setStartDate(boundedStartDate);
+                      if (!endDate || endDate < boundedStartDate) {
+                        setEndDate(boundedStartDate);
                       }
                     }}
                     required
@@ -210,7 +232,7 @@ function NewProjectModalContent({
                     type="date"
                     className="input input-bordered w-full bg-base-200 focus:bg-base-100"
                     value={endDate}
-                    min={startDate || undefined}
+                    min={startDate || today}
                     onChange={(event) => setEndDate(event.target.value)}
                     required
                   />
@@ -218,7 +240,7 @@ function NewProjectModalContent({
               </div>
 
               <p className="text-sm text-base-content/55">
-                Pentru un proiect de o singură zi, folosește aceeași dată la început și la final.
+                Data de început trebuie să fie astăzi sau în viitor. Pentru un proiect de o singură zi, folosește aceeași dată la început și la final.
               </p>
             </div>
 
@@ -227,7 +249,12 @@ function NewProjectModalContent({
                 selectedLocation={locationId}
                 onChange={handleLocationChange}
                 onLocationsLoaded={handleLocationsLoaded}
+                allowEmptyOption
+                emptyOptionLabel="Adaugă locația Waitwhile mai târziu"
               />
+              <p className="mt-3 text-sm text-base-content/55">
+                Locația Waitwhile este opțională la creare. O poți conecta ulterior din pagina proiectului.
+              </p>
             </div>
 
             <div className="form-control gap-3">
@@ -261,7 +288,7 @@ function NewProjectModalContent({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !name || !locationId || !startDate || !endDate}
+                disabled={isSubmitting || !name || !startDate || !endDate}
                 className="btn btn-primary gap-2"
               >
                 {isSubmitting ? <span className="loading loading-spinner loading-sm"></span> : null}

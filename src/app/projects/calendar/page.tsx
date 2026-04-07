@@ -3,9 +3,13 @@
 import { getProjects, type Project } from '@/app/actions/projects';
 import { NewProjectModal } from '@/components/projects/NewProjectModal';
 import { ProjectTagBadges } from '@/components/projects/ProjectTagBadges';
-import { normalizeProjectDates } from '@/lib/project-dates';
+import { getTodayDateString, normalizeProjectDates } from '@/lib/project-dates';
 import { normalizeProjectStatus } from '@/lib/project-status';
 import { PROJECT_TAG_OPTIONS } from '@/lib/project-tags';
+import {
+  getRomanianPublicHolidayMap,
+  ROMANIAN_PUBLIC_HOLIDAY_SOURCE_URL,
+} from '@/lib/romanian-public-holidays';
 import { useQuery } from '@tanstack/react-query';
 import {
   addMonths,
@@ -31,13 +35,14 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   FolderKanban,
   Layers3,
   Plus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type CalendarView = 'month' | 'year';
 
@@ -154,13 +159,46 @@ function getMonthSummary(projects: CalendarProject[], month: Date) {
   };
 }
 
+function getMonthKey(date: Date) {
+  return format(date, 'yyyy-MM');
+}
+
+function PublicHolidayNotice({
+  labels,
+  compact = false,
+}: {
+  labels: string[];
+  compact?: boolean;
+}) {
+  if (labels.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className={`rounded-xl border border-warning/35 bg-warning/15 ${
+        compact ? 'px-2.5 py-2' : 'px-2.5 py-3'
+      } shadow-sm`}
+    >
+      <div className="text-[0.58rem] font-black uppercase tracking-[0.18em] text-warning">
+        Sărbătoare legală
+      </div>
+      <div className={`mt-1 text-base-content ${compact ? 'text-[0.72rem]' : 'text-[0.76rem]'} font-semibold leading-5`}>
+        {labels.join(', ')}
+      </div>
+    </div>
+  );
+}
+
 export default function ProjectsCalendarPage() {
   const router = useRouter();
   const [view, setView] = useState<CalendarView>('year');
   const [focusedDate, setFocusedDate] = useState(() => new Date());
   const [hideEmptyDays, setHideEmptyDays] = useState(false);
+  const [hideMonthsBeforePreviousMonth, setHideMonthsBeforePreviousMonth] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createModalStartDate, setCreateModalStartDate] = useState<string | null>(null);
+  const yearMonthRefs = useRef(new Map<string, HTMLElement>());
 
   const { data: projects = [], isLoading, error } = useQuery({
     queryKey: ['projects-calendar'],
@@ -179,6 +217,8 @@ export default function ProjectsCalendarPage() {
     () => eachMonthOfInterval({ start: startOfYear(focusedDate), end: endOfYear(focusedDate) }),
     [focusedDate],
   );
+  const previousMonthThreshold = useMemo(() => startOfMonth(subMonths(new Date(), 1)), []);
+  const todayDateString = getTodayDateString();
 
   const currentMonthTitle = format(focusedDate, 'LLLL yyyy', { locale: ro });
   const currentYearTitle = format(focusedDate, 'yyyy', { locale: ro });
@@ -191,6 +231,36 @@ export default function ProjectsCalendarPage() {
     return buildDayProjectMap(calendarProjects, monthGridDays[0], monthGridDays[monthGridDays.length - 1]);
   }, [calendarProjects, monthGridDays, view]);
   const monthSummary = useMemo(() => getMonthSummary(calendarProjects, focusedDate), [calendarProjects, focusedDate]);
+  const displayedYears = useMemo(
+    () =>
+      Array.from(new Set([...yearMonths.map((month) => month.getFullYear()), ...monthGridDays.map((day) => day.getFullYear())])),
+    [monthGridDays, yearMonths],
+  );
+  const publicHolidayMap = useMemo(() => getRomanianPublicHolidayMap(displayedYears), [displayedYears]);
+  const visibleYearMonths = useMemo(() => {
+    if (!hideMonthsBeforePreviousMonth) {
+      return yearMonths;
+    }
+
+    const focusedYear = focusedDate.getFullYear();
+    const currentYear = previousMonthThreshold.getFullYear();
+
+    if (focusedYear !== currentYear) {
+      return yearMonths;
+    }
+
+    return yearMonths.filter((month) => month >= previousMonthThreshold);
+  }, [focusedDate, hideMonthsBeforePreviousMonth, previousMonthThreshold, yearMonths]);
+
+  useEffect(() => {
+    if (view !== 'year') {
+      return;
+    }
+
+    const targetMonth = yearMonthRefs.current.get(getMonthKey(focusedDate))
+      ?? yearMonthRefs.current.get(getMonthKey(previousMonthThreshold));
+    targetMonth?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [focusedDate, previousMonthThreshold, view]);
 
   const handleStepBack = () => {
     setFocusedDate((current) => (view === 'year' ? subYears(current, 1) : subMonths(current, 1)));
@@ -205,7 +275,13 @@ export default function ProjectsCalendarPage() {
   };
 
   const openCreateModal = (date?: Date) => {
-    setCreateModalStartDate(date ? format(date, 'yyyy-MM-dd') : null);
+    const nextStartDate = date ? format(date, 'yyyy-MM-dd') : null;
+
+    if (nextStartDate && nextStartDate < todayDateString) {
+      return;
+    }
+
+    setCreateModalStartDate(nextStartDate);
     setIsCreateModalOpen(true);
   };
 
@@ -308,25 +384,37 @@ export default function ProjectsCalendarPage() {
                   <p className="ui-kicker ui-text-teal">Vizualizare anuală</p>
                   <h2 className="ui-section-title mt-1 text-base-content">Fiecare lună este afișată ca o coloană separată</h2>
                 </div>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <p className="text-sm text-base-content/55">
-                    Fiecare zi devine un rând, iar proiectele sunt afișate direct în luna în care rulează.
-                  </p>
-                  <label className="flex items-center justify-between gap-3 rounded-2xl border border-base-200 bg-base-100 px-3 py-2 sm:min-w-[15rem]">
-                    <span className="text-sm font-medium text-base-content/70">Ascunde zilele fără proiecte</span>
-                    <input
-                      type="checkbox"
-                      className="toggle toggle-primary toggle-sm"
-                      checked={hideEmptyDays}
-                      onChange={(event) => setHideEmptyDays(event.target.checked)}
-                    />
-                  </label>
-                </div>
-              </div>
+	                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+	                  <p className="text-sm text-base-content/55">
+	                    Fiecare zi devine un rând, iar proiectele sunt afișate direct în luna în care rulează.
+	                  </p>
+	                  <div className="flex flex-col gap-2">
+	                    <label className="flex items-center justify-between gap-3 rounded-2xl border border-base-200 bg-base-100 px-3 py-2 sm:min-w-[15rem]">
+	                      <span className="text-sm font-medium text-base-content/70">Ascunde zilele fără proiecte</span>
+	                      <input
+	                        type="checkbox"
+	                        className="toggle toggle-primary toggle-sm"
+	                        checked={hideEmptyDays}
+	                        onChange={(event) => setHideEmptyDays(event.target.checked)}
+	                      />
+	                    </label>
+	                    <label className="flex items-center justify-between gap-3 rounded-2xl border border-base-200 bg-base-100 px-3 py-2 sm:min-w-[15rem]">
+	                      <span className="text-sm font-medium text-base-content/70">Ascunde lunile mai vechi decât luna trecută</span>
+	                      <input
+	                        type="checkbox"
+	                        className="toggle toggle-primary toggle-sm"
+	                        checked={hideMonthsBeforePreviousMonth}
+	                        onChange={(event) => setHideMonthsBeforePreviousMonth(event.target.checked)}
+	                      />
+	                    </label>
+	                  </div>
+	                </div>
+	              </div>
 
-              <div className="overflow-x-auto pb-2">
-                <div className="grid auto-cols-[minmax(20rem,1fr)] grid-flow-col gap-4">
-                  {yearMonths.map((month) => {
+	              <div className="overflow-x-auto pb-2">
+	                <div className="grid auto-cols-[minmax(20rem,1fr)] grid-flow-col gap-4">
+	                  {visibleYearMonths.map((month) => {
+	                    const monthKey = getMonthKey(month);
                     const monthDays = getMonthDays(month);
                     const monthDayMap = buildDayProjectMap(calendarProjects, monthDays[0], monthDays[monthDays.length - 1]);
                     const monthProjects = getMonthProjects(calendarProjects, month);
@@ -335,7 +423,18 @@ export default function ProjectsCalendarPage() {
                       : monthDays;
 
                     return (
-                      <article key={month.toISOString()} className="ui-panel-sky flex min-h-[34rem] flex-col rounded-[0.5rem] bg-gray-300/10 p-4">
+                      <article
+                        key={month.toISOString()}
+                        ref={(node) => {
+                          if (node) {
+                            yearMonthRefs.current.set(monthKey, node);
+                            return;
+                          }
+
+                          yearMonthRefs.current.delete(monthKey);
+                        }}
+                        className="ui-panel-sky flex min-h-[34rem] flex-col rounded-[0.5rem] bg-gray-300/10 p-4"
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="ui-kicker ui-text-sky">{format(month, 'LLLL', { locale: ro })}</p>
@@ -366,6 +465,9 @@ export default function ProjectsCalendarPage() {
                           ) : visibleMonthDays.map((day) => {
                             const dayProjects = monthDayMap.get(format(day, 'yyyy-MM-dd')) ?? [];
                             const fullDayLabel = format(day, 'd MMMM yyyy', { locale: ro });
+                            const dayKey = format(day, 'yyyy-MM-dd');
+                            const isPastDay = dayKey < todayDateString;
+                            const publicHolidayLabels = publicHolidayMap.get(dayKey) ?? [];
 
                             return (
                               <div
@@ -378,10 +480,23 @@ export default function ProjectsCalendarPage() {
                               >
                                 <button
                                   type="button"
-                                  className={`aspect-square rounded-xl px-0.5 py-0.5 text-center transition-colors hover:bg-primary hover:text-primary-content ${isToday(day) ? 'bg-primary text-white' : 'bg-base-300 text-base-content'}`}
+                                  className={`aspect-square rounded-xl px-0.5 py-0.5 text-center transition-colors ${
+                                    isPastDay
+                                      ? 'cursor-not-allowed opacity-45'
+                                      : 'hover:bg-primary hover:text-primary-content'
+                                  } ${isToday(day) ? 'bg-primary text-white' : 'bg-base-300 text-base-content'}`}
                                   onClick={() => openCreateModal(day)}
-                                  aria-label={`Creează proiect nou cu data de început ${fullDayLabel}`}
-                                  title={`Proiect nou din ${fullDayLabel}`}
+                                  aria-label={
+                                    isPastDay
+                                      ? `Nu poți crea proiecte înainte de data curentă: ${fullDayLabel}`
+                                      : `Creează proiect nou cu data de început ${fullDayLabel}`
+                                  }
+                                  title={
+                                    isPastDay
+                                      ? `Nu poți crea proiecte înainte de data curentă: ${fullDayLabel}`
+                                      : `Proiect nou din ${fullDayLabel}`
+                                  }
+                                  disabled={isPastDay}
                                 >
                                   <span className="flex h-full flex-col items-center justify-center">
                                     <span className="text-[0.82rem] font-semibold">{format(day, 'd', { locale: ro })}</span>
@@ -392,6 +507,10 @@ export default function ProjectsCalendarPage() {
                                 </button>
 
                                 <div className="min-w-0 space-y-1.5">
+                                  {dayProjects.length > 0 && publicHolidayLabels.length > 0 ? (
+                                    <PublicHolidayNotice labels={publicHolidayLabels} compact />
+                                  ) : null}
+
                                   {dayProjects.length > 0 ? (
                                     dayProjects.map((project) => (
                                       <Link
@@ -417,7 +536,9 @@ export default function ProjectsCalendarPage() {
                                     ))
                                   ) : (
                                     <div className="flex h-full min-h-10 items-center rounded-xl px-2.5 text-[0.7rem] text-base-content/35">
-                                      Fără proiecte
+                                      {publicHolidayLabels.length > 0
+                                        ? <span className="font-semibold text-warning">{publicHolidayLabels.join(', ')}</span>
+                                        : 'Fără proiecte'}
                                     </div>
                                   )}
                                 </div>
@@ -467,6 +588,9 @@ export default function ProjectsCalendarPage() {
                 {monthGridDays.map((day) => {
                   const dayProjects = monthDayMap.get(format(day, 'yyyy-MM-dd')) ?? [];
                   const inMonth = isSameMonth(day, focusedDate);
+                  const dayKey = format(day, 'yyyy-MM-dd');
+                  const isPastDay = dayKey < todayDateString;
+                  const publicHolidayLabels = publicHolidayMap.get(dayKey) ?? [];
 
                   return (
                     <div
@@ -481,15 +605,26 @@ export default function ProjectsCalendarPage() {
                         <button
                           type="button"
                           onClick={() => openCreateModal(day)}
-                          aria-label={`Creează proiect nou cu data de început ${format(day, 'd MMMM yyyy', { locale: ro })}`}
-                          title={`Proiect nou din ${format(day, 'd MMMM yyyy', { locale: ro })}`}
+                          aria-label={
+                            isPastDay
+                              ? `Nu poți crea proiecte înainte de data curentă: ${format(day, 'd MMMM yyyy', { locale: ro })}`
+                              : `Creează proiect nou cu data de început ${format(day, 'd MMMM yyyy', { locale: ro })}`
+                          }
+                          title={
+                            isPastDay
+                              ? `Nu poți crea proiecte înainte de data curentă: ${format(day, 'd MMMM yyyy', { locale: ro })}`
+                              : `Proiect nou din ${format(day, 'd MMMM yyyy', { locale: ro })}`
+                          }
                           className={`flex h-8 w-8 items-center justify-center rounded-full text-[0.88rem] font-semibold ${
                             isToday(day)
                               ? 'bg-primary text-primary-content'
                               : inMonth
                                 ? 'bg-base-200/70 text-base-content'
                                 : 'bg-base-200/40 text-base-content/40'
-                          } transition-colors hover:bg-primary hover:text-primary-content`}
+                          } transition-colors ${
+                            isPastDay ? 'cursor-not-allowed opacity-45' : 'hover:bg-primary hover:text-primary-content'
+                          }`}
+                          disabled={isPastDay}
                         >
                           {format(day, 'd', { locale: ro })}
                         </button>
@@ -502,6 +637,10 @@ export default function ProjectsCalendarPage() {
                       </div>
 
                       <div className="mt-3 space-y-1.5">
+                        {inMonth && dayProjects.length > 0 && publicHolidayLabels.length > 0 ? (
+                          <PublicHolidayNotice labels={publicHolidayLabels} />
+                        ) : null}
+
                         {dayProjects.slice(0, 3).map((project) => (
                           <Link
                             key={`${day.toISOString()}-${project.$id}`}
@@ -532,9 +671,13 @@ export default function ProjectsCalendarPage() {
                         ) : null}
 
                         {inMonth && dayProjects.length === 0 ? (
-                          <div className="rounded-xl border border-dashed border-base-200 px-2.5 py-3 text-[0.72rem] text-base-content/40">
-                            Fără proiecte planificate.
-                          </div>
+                          publicHolidayLabels.length > 0 ? (
+                            <PublicHolidayNotice labels={publicHolidayLabels} />
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-base-200 px-2.5 py-3 text-[0.72rem] text-base-content/40">
+                              Fără proiecte planificate.
+                            </div>
+                          )
                         ) : null}
                       </div>
                     </div>
@@ -596,6 +739,22 @@ export default function ProjectsCalendarPage() {
             <p className="ui-body mt-5 text-base-content/60">
               Cardurile rămân neutre, eticheta regională stă lângă titlu, iar linia de jos arată starea proiectului: activ, draft sau încheiat.
             </p>
+
+            <div className="mt-5 rounded-2xl border border-warning/20 bg-warning/10 p-4">
+              <p className="ui-label">Sărbători legale</p>
+              <p className="mt-2 text-sm text-base-content/65">
+                Calendarul marchează sărbătorile legale naționale pe baza art. 139 din Codul muncii. Nu includ zilele libere acordate individual pentru alte culte.
+              </p>
+              <a
+                href={ROMANIAN_PUBLIC_HOLIDAY_SOURCE_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-ghost btn-sm mt-3 justify-start gap-2"
+              >
+                <ExternalLink size={14} />
+                Vezi sursa oficială
+              </a>
+            </div>
 
             <div className="mt-5 rounded-2xl border border-base-200 bg-base-200/35 p-4">
               <p className="ui-label">Etichete regionale</p>

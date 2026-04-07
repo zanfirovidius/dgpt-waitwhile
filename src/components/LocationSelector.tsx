@@ -12,9 +12,17 @@ interface LocationSelectorProps {
   selectedLocation: string;
   onChange: (locId: string) => void;
   onLocationsLoaded?: (locations: Location[]) => void;
+  allowEmptyOption?: boolean;
+  emptyOptionLabel?: string;
 }
 
-export default function LocationSelector({ selectedLocation, onChange, onLocationsLoaded }: LocationSelectorProps) {
+export default function LocationSelector({
+  selectedLocation,
+  onChange,
+  onLocationsLoaded,
+  allowEmptyOption = false,
+  emptyOptionLabel = 'Alege o locație...',
+}: LocationSelectorProps) {
   const { data: locations = EMPTY_LOCATIONS, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['waitwhile-locations'],
     queryFn: async () => {
@@ -59,7 +67,9 @@ export default function LocationSelector({ selectedLocation, onChange, onLocatio
           value={selectedLocation}
           onChange={(e) => onChange(e.target.value)}
         >
-          <option value="" disabled>Alege o locație...</option>
+          <option value="" disabled={!allowEmptyOption}>
+            {emptyOptionLabel}
+          </option>
           {locations.map((loc) => (
              <option key={loc.id} value={loc.id}>
                {loc.name}

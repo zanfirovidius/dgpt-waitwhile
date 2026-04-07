@@ -3,7 +3,7 @@
 
 import { ID, Query } from 'node-appwrite';
 import { createAdminClient, createSessionClient } from '../../lib/appwrite-server';
-import { normalizeProjectDates } from '@/lib/project-dates';
+import { getTodayDateString, normalizeProjectDates, normalizeProjectDateValue } from '@/lib/project-dates';
 import { normalizeProjectTags, type ProjectTagCode } from '@/lib/project-tags';
 import { normalizeProjectStatus, type ProjectStatus } from '@/lib/project-status';
 import { normalizeToSlug, ensureUniqueProjectSlug } from '@/lib/slug';
@@ -72,15 +72,25 @@ async function applyProjectVolunteerSettings(project: Project, options: { useAdm
 
 export async function createProject(data: {
   name: string;
-  locationId: string;
-  locationName: string;
+  locationId?: string;
+  locationName?: string;
   startDate: string;
   endDate: string;
   projectStatus?: ProjectStatus;
   projectTags?: ProjectTagCode[];
 }): Promise<{ success: boolean; projectId?: string; error?: string }> {
-  if (data.endDate < data.startDate) {
-    return { success: false, error: 'End date must be on or after the start date' };
+  const startDate = normalizeProjectDateValue(data.startDate);
+  const endDate = normalizeProjectDateValue(data.endDate);
+  const today = getTodayDateString();
+  const locationId = data.locationId?.trim() || '';
+  const locationName = data.locationName?.trim() || '';
+
+  if (startDate < today) {
+    return { success: false, error: 'Data de început trebuie să fie astăzi sau într-o zi viitoare.' };
+  }
+
+  if (endDate < startDate) {
+    return { success: false, error: 'Data de final trebuie să fie egală sau ulterioară datei de început.' };
   }
 
   try {
@@ -103,15 +113,19 @@ export async function createProject(data: {
     
     // Create the project document
     const projectDoc = await databases.createDocument(DATABASE_ID, PROJECTS_COLLECTION_ID, ID.unique(), {
-      ...data,
-      date: data.startDate,
+      name: data.name,
+      locationId,
+      locationName,
+      startDate,
+      endDate,
+      date: startDate,
       projectStatus: normalizeProjectStatus(data.projectStatus),
       ...(projectTags.length > 0 ? { projectTags } : {}),
       projectSlug: uniqueSlug,
       // Metadata for setup
       eventName: data.name,
       city: '', // to be filled by user
-      venue: data.locationName,
+      venue: locationName,
     });
 
     const projectId = projectDoc.$id;
@@ -427,8 +441,8 @@ export async function getProjectBySlug(
 async function ensureProjectMetadataAttributes(
   databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
 ) {
-  const res = await databases.listAttributes(DATABASE_ID, PROJECTS_COLLECTION_ID);
-  const existing = new Map(res.attributes.map((attribute) => [attribute.key, attribute]));
+  const existingAttributes = await listAllProjectAttributes(databases);
+  const existing = new Map(existingAttributes.map((attribute) => [attribute.key, attribute]));
   const requiredStringAttributes = ['startDate', 'endDate', 'projectSlug', 'projectStatus', 'publicFeedbackFormStatus', 'eventName', 'city', 'venue'];
   const requiredStringArrayAttributes = ['projectTags'];
 
@@ -448,7 +462,13 @@ async function ensureProjectMetadataAttributes(
         : key === 'projectStatus'
           ? 16
           : 10;
-    await databases.createStringAttribute(DATABASE_ID, PROJECTS_COLLECTION_ID, key, size, false);
+    try {
+      await databases.createStringAttribute(DATABASE_ID, PROJECTS_COLLECTION_ID, key, size, false);
+    } catch (error) {
+      if (!isDuplicateAttributeError(error)) {
+        throw error;
+      }
+    }
   }
 
   for (const key of requiredStringArrayAttributes) {
@@ -456,15 +476,21 @@ async function ensureProjectMetadataAttributes(
       continue;
     }
 
-    await databases.createStringAttribute(
-      DATABASE_ID,
-      PROJECTS_COLLECTION_ID,
-      key,
-      16,
-      false,
-      undefined,
-      true,
-    );
+    try {
+      await databases.createStringAttribute(
+        DATABASE_ID,
+        PROJECTS_COLLECTION_ID,
+        key,
+        16,
+        false,
+        undefined,
+        true,
+      );
+    } catch (error) {
+      if (!isDuplicateAttributeError(error)) {
+        throw error;
+      }
+    }
   }
 
   await Promise.all(
@@ -478,12 +504,49 @@ async function ensureProjectMetadataAttributes(
   );
 }
 
+async function listAllProjectAttributes(
+  databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
+) {
+  const attributes: Awaited<ReturnType<typeof databases.listAttributes>>['attributes'] = [];
+  let offset = 0;
+
+  while (true) {
+    const res = await databases.listAttributes(
+      DATABASE_ID,
+      PROJECTS_COLLECTION_ID,
+      [Query.limit(100), Query.offset(offset)],
+      true,
+    );
+
+    attributes.push(...res.attributes);
+
+    if (res.attributes.length === 0 || attributes.length >= res.total) {
+      break;
+    }
+
+    offset += res.attributes.length;
+  }
+
+  return attributes;
+}
+
 async function waitForAttributeAvailability(
   databases: Awaited<ReturnType<typeof createAdminClient>>['databases'],
   key: string,
 ) {
   for (let attempt = 0; attempt < 15; attempt += 1) {
-    const attribute = await databases.getAttribute(DATABASE_ID, PROJECTS_COLLECTION_ID, key);
+    let attribute: Awaited<ReturnType<typeof databases.getAttribute>>;
+
+    try {
+      attribute = await databases.getAttribute(DATABASE_ID, PROJECTS_COLLECTION_ID, key);
+    } catch (error) {
+      if (getErrorCode(error) === 404) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+
+      throw error;
+    }
 
     if (attribute.status === 'available') {
       return;
@@ -505,6 +568,11 @@ function getErrorCode(error: unknown) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return toAppwriteLikeError(error).message || fallback;
+}
+
+function isDuplicateAttributeError(error: unknown) {
+  const appwriteError = toAppwriteLikeError(error);
+  return appwriteError.code === 409 || appwriteError.message?.toLowerCase().includes('already exists') === true;
 }
 
 function toAppwriteLikeError(error: unknown): AppwriteLikeError {

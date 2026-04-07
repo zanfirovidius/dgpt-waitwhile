@@ -2,19 +2,36 @@
 
 import { useEffect, useState } from 'react';
 import { getPlatformSettings, updatePlatformSettings, PlatformSettings } from '@/app/actions/platform';
-import { Save, Shield, Info, Building, User, Mail, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Save, Shield, Info, Building, User, Mail, FileText, CheckCircle2, AlertCircle, Users } from 'lucide-react';
+
+function formatRolesInput(roles?: string[]) {
+  return Array.isArray(roles) ? roles.join('\n') : '';
+}
+
+function parseRolesInput(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,;]+/)
+        .map((entry) => entry.trim().toUpperCase())
+        .filter(Boolean),
+    ),
+  );
+}
 
 export default function PlatformSettingsPage() {
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [defaultRolesInput, setDefaultRolesInput] = useState('');
 
   useEffect(() => {
     async function fetchSettings() {
       const res = await getPlatformSettings();
       if (res.success && res.data) {
         setSettings(res.data);
+        setDefaultRolesInput(formatRolesInput(res.data.defaultAttendanceRoles));
       }
       setLoading(false);
     }
@@ -27,9 +44,16 @@ export default function PlatformSettingsPage() {
 
     setSaving(true);
     setMessage(null);
+
+    const payload: PlatformSettings = {
+      ...settings,
+      defaultAttendanceRoles: parseRolesInput(defaultRolesInput),
+    };
     
-    const res = await updatePlatformSettings(settings);
+    const res = await updatePlatformSettings(payload);
     if (res.success) {
+      setSettings(payload);
+      setDefaultRolesInput(formatRolesInput(payload.defaultAttendanceRoles));
       setMessage({ type: 'success', text: 'Settings updated successfully!' });
     } else {
       setMessage({ type: 'error', text: res.error || 'Failed to update settings' });
@@ -37,9 +61,11 @@ export default function PlatformSettingsPage() {
     setSaving(false);
   };
 
-  const updateField = (field: keyof PlatformSettings, value: string | number) => {
+  const updateField = (field: keyof PlatformSettings, value: PlatformSettings[keyof PlatformSettings]) => {
     setSettings(prev => prev ? { ...prev, [field]: value } : null);
   };
+
+  const parsedDefaultRoles = parseRolesInput(defaultRolesInput);
 
   if (loading) {
     return (
@@ -230,6 +256,59 @@ export default function PlatformSettingsPage() {
               <label className="label">
                 <span className="label-text-alt text-base-content/50 italic">This will be shown on all public forms unless overridden.</span>
               </label>
+            </div>
+          </div>
+        </div>
+
+        <div className="card bg-base-100 shadow-xl border border-base-200 lg:col-span-2 overflow-hidden">
+          <div className="bg-base-200/50 px-6 py-4 border-b border-base-200 flex items-center gap-2">
+            <Users size={18} className="text-warning" />
+            <h2 className="font-bold">Default Volunteer Roles / Departments</h2>
+          </div>
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)] gap-6">
+            <div className="space-y-4">
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text font-medium text-sm">One role or department per line</span>
+                </label>
+                <textarea
+                  value={defaultRolesInput}
+                  onChange={(e) => setDefaultRolesInput(e.target.value)}
+                  placeholder={`ORGANIZATOR\nASISTENT\nMEDIC\nVOLUNTAR`}
+                  className="textarea textarea-bordered min-h-48 font-mono text-sm leading-6 focus:textarea-primary transition-all"
+                />
+                <label className="label">
+                  <span className="label-text-alt text-base-content/50">
+                    Every new project starts with this list. Inside each project you can still remove unused roles and add extra ones.
+                  </span>
+                </label>
+              </div>
+
+              <div className="rounded-2xl border border-base-200 bg-base-200/35 p-4 text-sm text-base-content/70">
+                <div className="flex items-start gap-3">
+                  <Info size={16} className="mt-0.5 shrink-0 text-info" />
+                  <p>
+                    The values are normalized to uppercase and duplicates are removed automatically when you save.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-base-content">Preview</p>
+              <div className="rounded-2xl border border-base-200 bg-base-200/25 p-4 min-h-48">
+                {parsedDefaultRoles.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {parsedDefaultRoles.map((role) => (
+                      <span key={role} className="badge badge-lg border-base-300 bg-base-100 px-4 py-3 rounded-xl">
+                        <span className="text-xs font-bold font-mono tracking-tight">{role}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-base-content/45">Add at least one default role or department.</p>
+                )}
+              </div>
             </div>
           </div>
         </div>
